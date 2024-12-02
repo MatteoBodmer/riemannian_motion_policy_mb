@@ -1,0 +1,9 @@
+<library path="riemannian_motion_policy">
+    <class name="riemannian_motion_policy/RiemannianMotionPolicy"
+           type="riemannian_motion_policy::RiemannianMotionPolicy"
+           base_class_type="controller_interface::ControllerInterface">
+        <description>
+            Riemannian Motion Policy Controller.
+        </description>
+    </class>
+</library>

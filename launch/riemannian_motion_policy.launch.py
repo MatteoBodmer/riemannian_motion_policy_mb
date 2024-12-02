@@ -23,15 +23,15 @@ def generate_launch_description():
 
     # Execute the set_load.sh script
     set_load = ExecuteProcess(
-        cmd=['/home/andri/franka_ros2_ws/src/cartesian_impedance_control/launch/set_load.sh'],
+        cmd=['/home/andri/franka_ros2_ws/src/riemannian_motion_policy/launch/set_load.sh'],
         output='screen',
     )
 
-    # Start the cartesian_impedance_controller after set_load.sh finishes
+    # Start the riemannian_motion_policyafter set_load.sh finishes
     start_controller = Node(
         package='controller_manager',
         executable='spawner',
-        arguments=['cartesian_impedance_controller'],
+        arguments=['riemannian_motion_policy'],
         output='screen',
     )
 
@@ -59,7 +59,7 @@ def generate_launch_description():
                 use_fake_hardware_parameter_name)),
         DeclareLaunchArgument(
             load_gripper_parameter_name,
-            default_value='true',  # set this to false for inertia estimation without franka gripper (i.e. drill, etc.)
+            default_value='false',
             description='Use Franka Gripper as an end-effector, otherwise, the robot is loaded '
                         'without an end-effector.'),
 

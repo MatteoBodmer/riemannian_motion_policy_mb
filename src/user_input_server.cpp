@@ -6,10 +6,10 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include "messages_fr3/srv/set_pose.hpp"
-#include "cartesian_impedance_control/user_input_server.hpp"
-#include "cartesian_impedance_control/cartesian_impedance_controller.hpp"
+#include "riemannian_motion_policy/user_input_server.hpp"
+#include "riemannian_motion_policy/riemannian_motion_policy.hpp"
 
-namespace cartesian_impedance_control{
+namespace riemannian_motion_policy{
 
 void UserInputServer::setPose(const std::shared_ptr<messages_fr3::srv::SetPose::Request> request, 
     std::shared_ptr<messages_fr3::srv::SetPose::Response> /*response*/)

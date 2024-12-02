@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>cartesian_impedance_control</name>
+  <name>riemannian_motion_policy</name>
   <version>0.1.8</version>
   <description>ROS2 version of the PdZ cartesian impedance controller for Franka Emika FR3</description>
   <maintainer email="cdeplazes@ethz.ch">Curdin Deplazes</maintainer>

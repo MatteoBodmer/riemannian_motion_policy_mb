@@ -30,7 +30,7 @@
 #include <thread>
 #include <chrono>         
 
-#include "cartesian_impedance_control/user_input_server.hpp"
+#include "riemannian_motion_policy/user_input_server.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include "rclcpp/subscription.hpp"
@@ -58,14 +58,15 @@
 #include "franka_semantic_components/franka_robot_model.hpp"
 #include "franka_semantic_components/franka_robot_state.hpp"
 #include "messages_fr3/msg/acceleration.hpp"
+#include "geometry_msgs/msg/pose.hpp"
 #define IDENTITY Eigen::MatrixXd::Identity(6, 6)
 
 using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 using Vector7d = Eigen::Matrix<double, 7, 1>;
 
-namespace cartesian_impedance_control {
+namespace riemannian_motion_policy {
 
-class CartesianImpedanceController : public controller_interface::ControllerInterface {
+class RiemannianMotionPolicy : public controller_interface::ControllerInterface {
 public:
   [[nodiscard]] controller_interface::InterfaceConfiguration command_interface_configuration()
       const override;
@@ -93,13 +94,7 @@ public:
  private:
     //Nodes
     rclcpp::Subscription<franka_msgs::msg::FrankaRobotState>::SharedPtr franka_state_subscriber = nullptr;
-    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr desired_joint_state_subscriber_ = nullptr;
     rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr desired_pose_sub;
-    rclcpp::Publisher<messages_fr3::msg::TauGravity>::SharedPtr tau_gravity_publisher_;
-    rclcpp::Publisher<messages_fr3::msg::Jacobian>::SharedPtr jacobian_publisher_;
-    rclcpp::Publisher<messages_fr3::msg::TransformationMatrix>::SharedPtr transformation_publisher_;
-    rclcpp::Publisher<messages_fr3::msg::Acceleration>::SharedPtr acceleration_publisher_;
-    rclcpp::Publisher<messages_fr3::msg::GravityForceVector>::SharedPtr gravity_force_vector_publisher_;
     rclcpp::Service<messages_fr3::srv::SetPose>::SharedPtr pose_srv_;
 
 
@@ -108,6 +103,10 @@ public:
     void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void desiredJointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void reference_pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg);
+    void rmp_joint_limit_avoidance();
+    void calculateRMP_global(const Eigen::MatrixXd& A_obs_tilde, 
+                         const Eigen::VectorXd& f_obs_tilde);
+    void get_ddq();
     void updateJointStates();
     void update_stiffness_and_references();
     void arrayToMatrix(const std::array<double, 6>& inputArray, Eigen::Matrix<double, 6, 1>& resultMatrix);
@@ -116,10 +115,16 @@ public:
     void calculate_residual_torque(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector);
     void calculateRTOB();
     void calculate_tau_gravity(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector, const Eigen::Matrix<double, 6, 7>& jacobian);
-    void calculate_gravity_torques();
-    void calculate_gravity_torques_ana(const Eigen::Matrix<double, 6, 7>& jacobian);
+    
     Eigen::Matrix<double, 7, 1> saturateTorqueRate(const Eigen::Matrix<double, 7, 1>& tau_d_calculated, const Eigen::Matrix<double, 7, 1>& tau_J_d);  
     std::array<double, 6> convertToStdArray(const geometry_msgs::msg::WrenchStamped& wrench);
+    Eigen::VectorXd calculate_f_obstacle(const Eigen::VectorXd& d_obs,
+                                       const Eigen::VectorXd& d_obs_prev);
+    Eigen::MatrixXd calculate_A_obstacle(const Eigen::VectorXd& d_obs,
+                                      const Eigen::VectorXd& f_obs);
+    Eigen::Vector3d calculateNearestPointOnSphere(const Eigen::Vector3d& position,
+                                                                      const Eigen::Vector3d& sphereCenter, 
+                                                                      double radius); 
     //State vectors and matrices
     Eigen::Matrix<double, 7, 7> M;
     std::array<double, 7> q_subscribed;
@@ -130,27 +135,8 @@ public:
     Eigen::Matrix<double, 7, 1> tau_J_d_M = Eigen::MatrixXd::Zero(7, 1);
     Eigen::Matrix<double, 6, 1> O_F_ext_hat_K_M = Eigen::MatrixXd::Zero(6,1);
     Eigen::Matrix<double, 7, 1> q_;
-    Eigen::Matrix<double, 7, 1> q_desired_ = (Eigen::Matrix<double, 7, 1>() <<
-        0.0,         // A1: (-166 + 166) / 2 in radians
-        -0.7854,         // A2: (-105 + 105) / 2 in radians
-        0.0,         // A3: (-166 + 166) / 2 in radians
-        -2.356,   // A4: (-176 + -7) / 2 in radians
-        0.0,         // A5: (-165 + 165) / 2 in radians
-        1.57,    // A6: (25 + 265) / 2 in radians
-        0.87          // A7: (-175 + 175) / 2 in radians
-    ).finished();
-    Eigen::Matrix<double, 7, 1> q_d_ = (Eigen::Matrix<double, 7, 1>() <<
-        0.0,         // A1: (-166 + 166) / 2 in radians
-        -0.7854,         // A2: (-105 + 105) / 2 in radians
-        0.0,         // A3: (-166 + 166) / 2 in radians
-        -2.356,   // A4: (-176 + -7) / 2 in radians
-        0.0,         // A5: (-165 + 165) / 2 in radians
-        1.57,    // A6: (25 + 265) / 2 in radians
-        0.87          // A7: (-175 + 175) / 2 in radians
-    ).finished();
     Eigen::Matrix<double, 7, 1> dq_;
     Eigen::Matrix<double, 7, 1> dq_prev_;
-    Eigen::Matrix<double, 7, 1> ddq_;
     Eigen::Matrix<double, 7, 1> q_prev;
     Eigen::Matrix<double, 7, 1> dq_filtered;
     Eigen::Matrix<double, 7, 1> dq_filtered_gravity;
@@ -202,8 +188,6 @@ public:
     Eigen::Matrix<double, 7, 7> kp;  // Diagonal matrix for kp
     Eigen::Matrix<double, 7, 7> kd;  // Diagonal matrix for kd
     
-
-
     Eigen::Matrix<double, 7, 7> K_0; //gain for residual torque observer
     double filter_gain = 0.1; //filter gain for residual torque observer
     bool gravity_ = true; // set if gravity compensation should be turned on
@@ -211,7 +195,63 @@ public:
     Eigen::Matrix<double, 3, 1> r_CoM_estimated = Eigen::MatrixXd::Zero(3,1); // estimated center of mass of the load
     Eigen::Matrix<double, 7, 1> tau_load = Eigen::MatrixXd::Zero(7,1); // load torque
     Eigen::Matrix<double, 6, 1> wrench_load; // load wrench
+
+    //RMP Parameters
+    Eigen::Matrix<double, 7, 1> sigma_u = Eigen::MatrixXd::Zero(7,1);
+    Eigen::Matrix<double, 7, 1> alpha_u = Eigen::MatrixXd::Zero(7,1);
+    Eigen::Matrix<double, 7, 1> d_ii = Eigen::MatrixXd::Zero(7,1);
+    Eigen::Matrix<double, 7, 1> d_ii_tilde = Eigen::MatrixXd::Zero(7,1);
+    Eigen::Matrix<double, 7, 7> D_sigma = Eigen::MatrixXd::Zero(7,7);
+    double c_alpha = 1.0;
+    double c = 0.1;
+    double gamma_p = 15;
+    double gamma_d = 7.7;
+    const Eigen::Matrix<double, 7, 1> q_0= (Eigen::VectorXd(7) << 0.109, -0.189, -0.104, -2.09, -0.0289, 1.90, 0.0189).finished();
+    const Eigen::Matrix<double, 7, 1> q_lower_limit = (Eigen::VectorXd(7) << -2.89725, -1.8326,-2.89725, -3.0718, -2.87979, 0.436332, -3.05433).finished();
+    const Eigen::Matrix<double, 7, 1> q_upper_limit = (Eigen::VectorXd(7) << 2.89725,1.8326, -2.89725, -0.122173, 2.87979, 4.62512, 3.05433).finished();
+    Eigen::Matrix<double, 6, 7> jacobian_tilde = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 7, 1> h_joint_limits = Eigen::MatrixXd::Zero(7,1);
+    Eigen::Matrix<double, 6, 1> x_dd_des = Eigen::MatrixXd::Zero(6,1);
+    Eigen::Matrix<double, 6, 1> s = Eigen::MatrixXd::Zero(6,1);
+    Eigen::Matrix<double, 6, 1> pose_endeffector = Eigen::MatrixXd::Zero(6,1);
+    Eigen::Matrix<double, 7, 1> u = Eigen::MatrixXd::Zero(7,1);
     
+    double lambda_RMP = 0.01;
+    Eigen::Matrix<double, 7, 1> ddq_;
+    Eigen::Matrix<double, 7, 1> tau_RMP;
+    Eigen::Matrix<double, 6, 6> K_RMP =  (Eigen::MatrixXd(6,6) << 250,   0,   0,   0,   0,   0,
+                                                                0, 250,   0,   0,   0,   0,
+                                                                0,   0, 250,   0,   0,   0,  
+                                                                0,   0,   0, 20,   0,   0,
+                                                                0,   0,   0,   0, 20,   0,
+                                                                0,   0,   0,   0,   0,  10).finished();
+
+    Eigen::Matrix<double, 6, 6> D_RMP =  (Eigen::MatrixXd(6,6) <<  30,   0,   0,   0,   0,   0,
+                                                                0,  30,   0,   0,   0,   0,
+                                                                0,   0,  30,   0,   0,   0,  
+                                                                0,   0,   0,   9,   0,   0,
+                                                                0,   0,   0,   0,   9,   0,
+                                                                0,   0,   0,   0,   0,   6).finished();
+    //RMP Obstacle Avoidance Parameters
+    
+    Eigen::Vector3d d_obs1 ;
+    Eigen::Vector3d d_obs_prev1 ;
+    Eigen::Matrix<double, 3, 7> Jp = Eigen::MatrixXd::Zero(3,1);
+    
+    Eigen::VectorXd f_obs_tilde1 = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tilde1 = Eigen::MatrixXd::Identity(6,6);
+  
+    Eigen::Vector3d sphere_center = (Eigen::VectorXd(3) << 0.3, 0.0, 0.5).finished();
+    double sphere_radius = 0.0;
+    
+    Eigen::VectorXd f_tot = Eigen::VectorXd::Zero(6);  // Correct dynamic-size initialization
+    Eigen::MatrixXd A_tot = Eigen::MatrixXd::Zero(6,6);  // Dynamic-size matrix
+    Eigen::MatrixXd A_tot_pinv;
+
+
+
+
+
     //Robot parameters
     const int num_joints = 7;
     const std::string state_interface_name_{"robot_state"};
@@ -227,12 +267,12 @@ public:
     Eigen::Matrix<double, 6, 6> Lambda = IDENTITY;                                           // operational space mass matrix
     Eigen::Matrix<double, 6, 6> Sm = IDENTITY;                                               // task space selection matrix for positions and rotation
     Eigen::Matrix<double, 6, 6> Sf = Eigen::MatrixXd::Zero(6, 6);                            // task space selection matrix for forces
-    Eigen::Matrix<double, 6, 6> K =  Eigen::MatrixXd::Zero(6, 6);/*(Eigen::MatrixXd(6,6) << 250,   0,   0,   0,   0,   0,
+    Eigen::Matrix<double, 6, 6> K =  (Eigen::MatrixXd(6,6) << 250,   0,   0,   0,   0,   0,
                                                                 0, 250,   0,   0,   0,   0,
                                                                 0,   0, 250,   0,   0,   0,  // impedance stiffness term
                                                                 0,   0,   0, 130,   0,   0,
                                                                 0,   0,   0,   0, 130,   0,
-                                                                0,   0,   0,   0,   0,  10).finished();*/
+                                                                0,   0,   0,   0,   0,  10).finished();
 
     Eigen::Matrix<double, 6, 6> D =  (Eigen::MatrixXd(6,6) <<  35,   0,   0,   0,   0,   0,
                                                                 0,  35,   0,   0,   0,   0,
@@ -302,6 +342,5 @@ public:
 
     //Filter-parameters
     double filter_params_{0.001};
-    int mode_ = 2;                      // impedance control mode (deactivated because of Simon)    
 };
-}  // namespace cartesian_impedance_control
+}  // namespace riemannian_motion_policy

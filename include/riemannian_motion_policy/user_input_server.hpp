@@ -9,7 +9,7 @@
 #include <messages_fr3/srv/set_param.hpp>
 
 
-namespace cartesian_impedance_control {
+namespace riemannian_motion_policy {
 
 class UserInputServer {
 public:

@@ -1,9 +1,9 @@
-#include <cartesian_impedance_control/cartesian_impedance_controller.hpp>
+#include <riemannian_motion_policy/riemannian_motion_policy.hpp>
 
-namespace cartesian_impedance_control{
+namespace riemannian_motion_policy{
     //Calculates the gravity compensation torque.
 
-    void CartesianImpedanceController::calculate_residual_torque(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector) {
+    void RiemannianMotionPolicy::calculate_residual_torque(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector) {
         // Use previous timestep to calculate M_dot
         K_0.diagonal() << 80,80,80,80,80,40,40;
         
@@ -24,7 +24,7 @@ namespace cartesian_impedance_control{
 
 
     // Function to filter the residual torque and extract gravity torque using RTOB
-    void CartesianImpedanceController::calculateRTOB() {
+    void RiemannianMotionPolicy::calculateRTOB() {
         // Apply low-pass filter to the residual torque (recursive torque observer)
         tau_gravity_filtered = filter_gain * residual + (1.0 - filter_gain) * tau_gravity_filtered_prev;
 
@@ -34,7 +34,7 @@ namespace cartesian_impedance_control{
 
 
     // Function to calculate gravity torques for all joints
-    /*void CartesianImpedanceController::calculate_gravity_torques() {
+    /*void RiemannianMotionPolicy::calculate_gravity_torques() {
         // Initialize the intercepts for each joint
         Eigen::Matrix<double, 7, 1> intercepts;
         intercepts << -0.0004, -32.9103, -0.3486, 13.9538, 0.8066, 2.3977, -0.0120;
@@ -56,7 +56,7 @@ namespace cartesian_impedance_control{
         tau_gravity = intercepts + coefficients * q_;
     }*/
 
-    void CartesianImpedanceController::calculate_tau_gravity(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector, const Eigen::Matrix<double, 6, 7>& jacobian) {
+    void RiemannianMotionPolicy::calculate_tau_gravity(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector, const Eigen::Matrix<double, 6, 7>& jacobian) {
         if (gravity_){
                    
                 // Step 1: Calculate disturbance torques using the 1st Momentum Observer Residual
@@ -68,17 +68,7 @@ namespace cartesian_impedance_control{
 
                // Final gravity torque 
             
-                // Publish tau_gravity
-                // Create a message of type messages_fr3::msg::TauGravity
-                messages_fr3::msg::TauGravity tau_gravity_msg;
-
-                // Fill the message with the values from the Eigen matrix
-                for (size_t i = 0; i < 7; ++i) {
-                    tau_gravity_msg.tau_gravity[i] = tau_gravity(i);  // Assuming TauGravity.msg has a float64[7] named tau_gravity
-                    }
-
-                // Publish the message  
-                tau_gravity_publisher_->publish(tau_gravity_msg);
+               
             
         }
 

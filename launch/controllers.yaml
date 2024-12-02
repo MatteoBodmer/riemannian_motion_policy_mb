@@ -2,5 +2,5 @@ controller_manager:
   ros__parameters:
     update_rate: 1000  # Hz
 
-    cartesian_impedance_controller:
-      type: cartesian_impedance_control/CartesianImpedanceController
+    riemannian_motion_policy:
+      type: riemannian_motion_policy/RiemannianMotionPolicy

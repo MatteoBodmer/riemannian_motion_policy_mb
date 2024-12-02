@@ -1,10 +1,10 @@
-#include <cartesian_impedance_control/cartesian_impedance_controller.hpp>
+#include <riemannian_motion_policy/riemannian_motion_policy.hpp>
 
-namespace cartesian_impedance_control{
+namespace riemannian_motion_policy{
     //Calculates the friction forces acting on the robot's joints depending on joint rotational speed. 
     //Exerts torque up to a certain empirically detected static friction threshold. 
     //TODO: Afterwards, goes into the viscous domain and follows a linear raise depending on empiric parameters
-    void CartesianImpedanceController::calculate_tau_friction(){
+    void RiemannianMotionPolicy::calculate_tau_friction(){
         if (friction_){
             double alpha = 0.01;//constant for exponential filter in relation to static friction moment        
             dq_filtered = alpha* dq_ + (1 - alpha) * dq_filtered; //Filtering dq of every joint

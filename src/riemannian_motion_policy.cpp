@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cartesian_impedance_control/cartesian_impedance_controller.hpp>
+#include <riemannian_motion_policy/riemannian_motion_policy.hpp>
 #include <cassert>
 #include <cmath>
 #include <exception>
@@ -34,9 +34,9 @@ std::ostream& operator<<(std::ostream& ostream, const std::array<T, N>& array) {
 }
 }
 
-namespace cartesian_impedance_control {
+namespace riemannian_motion_policy {
 
-void CartesianImpedanceController::update_stiffness_and_references(){
+void RiemannianMotionPolicy::update_stiffness_and_references(){
   //target by filtering
   /** at the moment we do not use dynamic reconfigure and control the robot via D, K and T **/
   //K = filter_params_ * cartesian_stiffness_target_ + (1.0 - filter_params_) * K;
@@ -44,39 +44,9 @@ void CartesianImpedanceController::update_stiffness_and_references(){
   nullspace_stiffness_ = filter_params_ * nullspace_stiffness_target_ + (1.0 - filter_params_) * nullspace_stiffness_;
   //std::lock_guard<std::mutex> position_d_target_mutex_lock(position_and_orientation_d_target_mutex_);
   position_d_ = filter_params_ * position_d_target_ + (1.0 - filter_params_) * position_d_;
+  
   orientation_d_ = orientation_d_.slerp(filter_params_, orientation_d_target_);
-  q_d_ = 0.005 * q_desired_ + 0.995 * q_d_;
-  F_contact_des = 0.05 * F_contact_target + 0.95 * F_contact_des;
-    
 }
-
-
-void CartesianImpedanceController::arrayToMatrix(const std::array<double,7>& inputArray, Eigen::Matrix<double,7,1>& resultMatrix)
-{
- for(long unsigned int i = 0; i < 7; ++i){
-     resultMatrix(i,0) = inputArray[i];
-   }
-}
-
-void CartesianImpedanceController::arrayToMatrix(const std::array<double,6>& inputArray, Eigen::Matrix<double,6,1>& resultMatrix)
-{
- for(long unsigned int i = 0; i < 6; ++i){
-     resultMatrix(i,0) = inputArray[i];
-   }
-}
-
-Eigen::Matrix<double, 7, 1> CartesianImpedanceController::saturateTorqueRate(
-  const Eigen::Matrix<double, 7, 1>& tau_d_calculated,
-  const Eigen::Matrix<double, 7, 1>& tau_J_d_M) {  
-  Eigen::Matrix<double, 7, 1> tau_d_saturated{};
-  for (size_t i = 0; i < 7; i++) {
-  double difference = tau_d_calculated[i] - tau_J_d_M[i];
-  tau_d_saturated[i] =
-         tau_J_d_M[i] + std::max(std::min(difference, delta_tau_max_), -delta_tau_max_);
-  }
-  return tau_d_saturated;
-}
-
 
 inline void pseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool damped = true) {
   double lambda_ = damped ? 0.2 : 0.0;
@@ -90,10 +60,189 @@ inline void pseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, b
 
   M_pinv_ = Eigen::MatrixXd(svd.matrixV() * S_.transpose() * svd.matrixU().transpose());
 }
+//Calculate nearest point on sphere
+Eigen::Vector3d RiemannianMotionPolicy::calculateNearestPointOnSphere(const Eigen::Vector3d& position,
+                                                                      const Eigen::Vector3d& sphereCenter, 
+                                                                      double radius) {
+    // Calculate the vector from end-effector to sphere center
+    Eigen::Vector3d vector = sphereCenter - position;
 
+    // Calculate the magnitude of the vector
+    double distanceToCenter = vector.norm();
+
+    // Handle edge case where the end-effector is at the sphere center
+    if (distanceToCenter < 1e-6) {
+        std::cerr << "End-effector is at the sphere center. Returning sphere center as nearest point.\n";
+        return sphereCenter;
+    }
+
+    // Normalize the vector to get the direction to the nearest point on the surface
+    Eigen::Vector3d direction = vector / distanceToCenter;
+    
+    // Compute the nearest point on the sphere's surface to robot
+    Eigen::Vector3d nearestPoint = vector - radius * direction;
+
+    return nearestPoint;
+}
+
+
+
+//RMP calculation for obstacle avoidance
+Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::VectorXd& d_obs,
+                                                             const Eigen::VectorXd& d_obs_prev) {
+  
+  Eigen::Matrix<double, 3, 1> nabla_d = Eigen::MatrixXd::Zero(3,1);
+  double alpha_rep;
+  double eta_rep = 10;
+  double mu_rep = 0.05;
+  double distance;
+  Eigen::Matrix<double, 3, 1> f_repulsive = Eigen::MatrixXd::Zero(3,1);
+  double alpha_damp;
+  double eta_damp = 20.0;
+  double mu_damp = 0.1;
+  double epsilon = 0.0001;
+  Eigen::Matrix<double, 3, 1> P_obs = Eigen::MatrixXd::Zero(3,1);
+  Eigen::Matrix<double, 3, 1> f_damping = Eigen::MatrixXd::Zero(3,1);
+  Eigen::Matrix<double, 3, 1> f_obstacle = Eigen::MatrixXd::Zero(3,1);
+  
+  // Compute nabla_d
+  nabla_d = -d_obs/d_obs.norm();
+  distance = d_obs.norm();
+  
+  alpha_rep = eta_rep * std::exp(-distance / mu_rep);
+  //alpha_rep = eta_rep * 1 / (std::pow(distance + mu_rep, 2));
+  // Compute f_repulsive
+  f_repulsive = alpha_rep * nabla_d.array();
+
+  // Compute alpha_damp
+  alpha_damp = eta_damp / ((distance / mu_damp) + epsilon);
+
+  // Compute dot product for P_obs
+  double dot_product = -(Jp * dq_).transpose().dot(nabla_d);
+  P_obs = std::max(0.0, dot_product) * nabla_d * nabla_d.transpose() * (Jp * dq_);
+
+  // Compute f_damping
+  f_damping = alpha_damp * P_obs.array();
+
+  // Compute total f_obstacle
+  f_obstacle = f_repulsive + f_damping;
+
+  // Assign to f_obstacle_tilde
+  Eigen::VectorXd f_obstacle_tilde = Eigen::VectorXd::Zero(6);
+  f_obstacle_tilde.topRows(3) = f_obstacle;
+
+  return f_obstacle_tilde;
+}
+
+Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::VectorXd& d_obs,
+                                                             const Eigen::VectorXd& f_obstacle_tilde) {
+   
+  double r_a = 1;
+  double alpha_a = 3;
+  double beta_x = 0.5;
+  
+  Eigen::Matrix3d H_obs = Eigen::Matrix3d::Identity();
+  Eigen::Matrix3d A_stretch = Eigen::Matrix3d::Identity();
+  Eigen::Vector3d xsi = Eigen::Vector3d::Zero();
+  Eigen::Vector3d f_obstacle = Eigen::Vector3d::Zero();
+  Eigen::Matrix3d A_obs = Eigen::Matrix3d::Zero();
+  Eigen::MatrixXd A_obs_tilde = Eigen::MatrixXd::Zero(6, 6);
+  Eigen::Matrix3d identity_3 = Eigen::Matrix3d::Identity();
+
+  f_obstacle = f_obstacle_tilde.topRows(3);
+
+  // Check for valid values
+  if (!d_obs.allFinite() || !f_obstacle.allFinite()) {
+      throw std::runtime_error("d_obs or f_obstacle contains invalid values (NaN or inf).");
+  }
+
+  double c_1 = (-2.0 / r_a);
+  double c_2 = 1.0 / std::pow(r_a, 2);
+  double w_r = c_2 * d_obs.norm() * d_obs.norm() + c_1 * d_obs.norm() + 1.0;
+
+ 
+  double h_v = f_obstacle.norm() + log(1.0 + exp(-2 * alpha_a * f_obstacle.norm())) / alpha_a;
+  xsi = f_obstacle / (h_v);
+
+  A_stretch = xsi * xsi.transpose();
+  H_obs = beta_x * A_stretch + (1.0 - beta_x) * identity_3;
+  A_obs = w_r * H_obs;
+
+  A_obs_tilde.topLeftCorner(3, 3) = A_obs;
+
+  return A_obs_tilde;
+}
+
+
+//RMP calculation of joint limit avoidance
+void RiemannianMotionPolicy::rmp_joint_limit_avoidance(){
+  //TODO: Implement the calculation of D_sigma fro joint limits
+  //calculate sigma_u = 1/(1 + exp(-q))
+  for (size_t i = 0; i < 7; ++i) {
+    sigma_u(i) = 1/(1 + exp(-q_(i)));  
+    //calculate alpha_u = 1/(1 + exp(-dq_ * c_alpha))
+    alpha_u(i) = 1/(1 + exp(-dq_(i) * c_alpha));
+    //calculate d_ii
+    d_ii(i) = (q_upper_limit(i) - q_lower_limit(i)) * sigma_u(i) * (1 - sigma_u(i));
+    //calculate d_ii_tilde
+    d_ii_tilde(i) = sigma_u(i)*(alpha_u(i)*d_ii(i) + (1 - alpha_u(i))) + (1 - sigma_u(i))*((1- alpha_u(i)) * d_ii(i) + alpha_u(i));
+    //calculate D_sigma
+    D_sigma(i,i) = d_ii_tilde(i);
+  }
+  jacobian_tilde = jacobian * D_sigma;
+  h_joint_limits = D_sigma.inverse() * (gamma_p * (q_0 - q_) - gamma_d * dq_);
+}
+
+void RiemannianMotionPolicy::calculateRMP_global(const Eigen::MatrixXd& A_obs_tilde, 
+                                                 const Eigen::VectorXd& f_obs_tilde) {
+  Eigen::MatrixXd identity_6 = Eigen::MatrixXd::Identity(6, 6);
+
+  // Compute A_tot
+  A_tot = identity_6 + A_obs_tilde;
+  pseudoInverse(A_tot, A_tot_pinv);
+  // Compute f_tot
+  f_tot = A_tot_pinv*(identity_6 * x_dd_des + A_obs_tilde * f_obs_tilde);
+
+}
+
+
+
+//get global joint acceleration for torque calculation
+void RiemannianMotionPolicy::get_ddq(){
+
+  Eigen::MatrixXd I_77 = Eigen::MatrixXd::Identity(7, 7);
+  ddq_ = D_sigma * (jacobian_tilde.transpose()*A_tot *jacobian_tilde + lambda_RMP * I_77).inverse() * (jacobian_tilde.transpose() * A_tot * f_tot + lambda_RMP * h_joint_limits);
+  
+}
+
+void RiemannianMotionPolicy::arrayToMatrix(const std::array<double,7>& inputArray, Eigen::Matrix<double,7,1>& resultMatrix)
+{
+ for(long unsigned int i = 0; i < 7; ++i){
+     resultMatrix(i,0) = inputArray[i];
+   }
+}
+
+void RiemannianMotionPolicy::arrayToMatrix(const std::array<double,6>& inputArray, Eigen::Matrix<double,6,1>& resultMatrix)
+{
+ for(long unsigned int i = 0; i < 6; ++i){
+     resultMatrix(i,0) = inputArray[i];
+   }
+}
+
+Eigen::Matrix<double, 7, 1> RiemannianMotionPolicy::saturateTorqueRate(
+  const Eigen::Matrix<double, 7, 1>& tau_d_calculated,
+  const Eigen::Matrix<double, 7, 1>& tau_J_d_M) {  
+  Eigen::Matrix<double, 7, 1> tau_d_saturated{};
+  for (size_t i = 0; i < 7; i++) {
+  double difference = tau_d_calculated[i] - tau_J_d_M[i];
+  tau_d_saturated[i] =
+         tau_J_d_M[i] + std::max(std::min(difference, delta_tau_max_), -delta_tau_max_);
+  }
+  return tau_d_saturated;
+}
 
 controller_interface::InterfaceConfiguration
-CartesianImpedanceController::command_interface_configuration() const {
+RiemannianMotionPolicy::command_interface_configuration() const {
   controller_interface::InterfaceConfiguration config;
   config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
   for (int i = 1; i <= num_joints; ++i) {
@@ -103,7 +252,7 @@ CartesianImpedanceController::command_interface_configuration() const {
 }
 
 
-controller_interface::InterfaceConfiguration CartesianImpedanceController::state_interface_configuration()
+controller_interface::InterfaceConfiguration RiemannianMotionPolicy::state_interface_configuration()
   const {
   controller_interface::InterfaceConfiguration state_interfaces_config;
   state_interfaces_config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
@@ -124,7 +273,7 @@ controller_interface::InterfaceConfiguration CartesianImpedanceController::state
 }
 
 
-CallbackReturn CartesianImpedanceController::on_init() {
+CallbackReturn RiemannianMotionPolicy::on_init() {
    UserInputServer input_server_obj(&position_d_target_, &rotation_d_target_, &K, &D, &T);
    std::thread input_thread(&UserInputServer::main, input_server_obj, 0, nullptr);
    input_thread.detach();
@@ -132,7 +281,7 @@ CallbackReturn CartesianImpedanceController::on_init() {
 }
 
 
-CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle::State& /*previous_state*/) {
+CallbackReturn RiemannianMotionPolicy::on_configure(const rclcpp_lifecycle::State& /*previous_state*/) {
   franka_robot_model_ = std::make_unique<franka_semantic_components::FrankaRobotModel>(
   franka_semantic_components::FrankaRobotModel(robot_name_ + "/" + k_robot_model_interface_name,
                                                robot_name_ + "/" + k_robot_state_interface_name));
@@ -142,7 +291,7 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
     qos_profile.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
     franka_state_subscriber = get_node()->create_subscription<franka_msgs::msg::FrankaRobotState>(
     "franka_robot_state_broadcaster/robot_state", qos_profile, 
-    std::bind(&CartesianImpedanceController::topic_callback, this, std::placeholders::_1));
+    std::bind(&RiemannianMotionPolicy::topic_callback, this, std::placeholders::_1));
     std::cout << "Succesfully subscribed to robot_state_broadcaster" << std::endl;
   }
 
@@ -157,32 +306,16 @@ CallbackReturn CartesianImpedanceController::on_configure(const rclcpp_lifecycle
 }
 
 
-CallbackReturn CartesianImpedanceController::on_activate(
+CallbackReturn RiemannianMotionPolicy::on_activate(
   const rclcpp_lifecycle::State& /*previous_state*/) {
   franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_);
-  //Initialize tau_gravity_publisher
-  tau_gravity_publisher_ = this->get_node()->create_publisher<messages_fr3::msg::TauGravity>("tau_gravity", 10);
   // Create the subscriber in the on_activate method
   desired_pose_sub = get_node()->create_subscription<geometry_msgs::msg::Pose>(
-        "cartesian_impedance_controller/reference_pose", 
+        "/riemannian_motion_policy/reference_pose", 
         10,  // Queue size
-        std::bind(&CartesianImpedanceController::reference_pose_callback, this, std::placeholders::_1)
+        std::bind(&RiemannianMotionPolicy::reference_pose_callback, this, std::placeholders::_1)
     );
-
-  //create publisher for Jacobian
-  jacobian_publisher_ = this->get_node()->create_publisher<messages_fr3::msg::Jacobian>("jacobian", 10);
-
-  desired_joint_state_subscriber_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
-        "/franka_robot_state_broadcaster/desired_joint_state", 10,
-        std::bind(&CartesianImpedanceController::desiredJointStateCallback, this, std::placeholders::_1)
-        );
-  //create publisher for gravity force vector
-  gravity_force_vector_publisher_ = this->get_node()->create_publisher<messages_fr3::msg::GravityForceVector>("gravity_force_vector", 10);
-  //create publisher for acceleration
-  acceleration_publisher_ = this->get_node()->create_publisher<messages_fr3::msg::Acceleration>("acceleration", 10);
-  //create publisher for transformation matrix
-  transformation_publisher_ = this->get_node()->create_publisher<messages_fr3::msg::TransformationMatrix>("transformation_matrix", 10);
-
+  std::cout << "Succesfully subscribed to reference pose publisher" << std::endl;
   std::array<double, 16> initial_pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
   Eigen::Affine3d initial_transform(Eigen::Matrix4d::Map(initial_pose.data()));
   position_d_ = initial_transform.translation();
@@ -196,13 +329,13 @@ CallbackReturn CartesianImpedanceController::on_activate(
 }
 
 
-controller_interface::CallbackReturn CartesianImpedanceController::on_deactivate(
+controller_interface::CallbackReturn RiemannianMotionPolicy::on_deactivate(
   const rclcpp_lifecycle::State& /*previous_state*/) {
   franka_robot_model_->release_interfaces();
   return CallbackReturn::SUCCESS;
 }
 
-std::array<double, 6> CartesianImpedanceController::convertToStdArray(const geometry_msgs::msg::WrenchStamped& wrench) {
+std::array<double, 6> RiemannianMotionPolicy::convertToStdArray(const geometry_msgs::msg::WrenchStamped& wrench) {
     std::array<double, 6> result;
     result[0] = wrench.wrench.force.x;
     result[1] = wrench.wrench.force.y;
@@ -213,27 +346,14 @@ std::array<double, 6> CartesianImpedanceController::convertToStdArray(const geom
     return result;
 }
 
-void CartesianImpedanceController::topic_callback(const std::shared_ptr<franka_msgs::msg::FrankaRobotState> msg) {
+void RiemannianMotionPolicy::topic_callback(const std::shared_ptr<franka_msgs::msg::FrankaRobotState> msg) {
   // Existing handling of external forces
   O_F_ext_hat_K = convertToStdArray(msg->o_f_ext_hat_k);
   arrayToMatrix(O_F_ext_hat_K, O_F_ext_hat_K_M);
 }
 
 
-void CartesianImpedanceController::desiredJointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
-        // Handle the received desired joint positions
-        if (msg->position.size() != 7) {
-            RCLCPP_ERROR(get_node()->get_logger(), "Expected 7 joint positions, but got %lu", msg->position.size());
-            return;
-        }
-        for (size_t i = 0; i < 7; ++i) {
-            q_desired_(i) = msg->position[i];
-        }
-    }
-
-
-
-void CartesianImpedanceController::reference_pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg)
+void RiemannianMotionPolicy::reference_pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg)
 {
     // Handle the incoming pose message
     std::cout << "received reference posistion as " <<  msg->position.x << ", " << msg->position.y << ", " << msg->position.z << std::endl;
@@ -243,7 +363,7 @@ void CartesianImpedanceController::reference_pose_callback(const geometry_msgs::
 }
 
 
-void CartesianImpedanceController::jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
+void RiemannianMotionPolicy::jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg) {
     // Check if the size of the effort vector is correct (should match the number of joints, e.g., 7 for Franka)
     if (msg->effort.size() == 7) {
         // Convert std::vector from the message into an Eigen matrix for tau_J
@@ -256,8 +376,8 @@ void CartesianImpedanceController::jointStateCallback(const sensor_msgs::msg::Jo
 }
 
 
-void CartesianImpedanceController::updateJointStates() {
-  dq_prev_ = dq_;
+void RiemannianMotionPolicy::updateJointStates() {
+  q_prev = q_;
   for (auto i = 0; i < num_joints; ++i) {
     const auto& position_interface = state_interfaces_.at(2 * i);
     const auto& velocity_interface = state_interfaces_.at(2 * i + 1);
@@ -268,8 +388,7 @@ void CartesianImpedanceController::updateJointStates() {
   }
 }
 
-
-controller_interface::return_type CartesianImpedanceController::update(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/) {  
+controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/) {  
   // if (outcounter == 0){
   // std::cout << "Enter 1 if you want to track a desired position or 2 if you want to use free floating with optionally shaped inertia" << std::endl;
   // std::cin >> mode_;
@@ -280,48 +399,22 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
   //   std::cin >> mode_;
   // }
   // }
-  jacobian_prev_ = jacobian_endeffector;
   std::array<double, 49> mass = franka_robot_model_->getMassMatrix();
   std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
   std::array<double, 7> gravity_force_vector_array = franka_robot_model_->getGravityForceVector();
-  //publish gravity force vector
-  messages_fr3::msg::GravityForceVector gravity_force_vector_msg;
-  gravity_force_vector_msg.gravity = gravity_force_vector_array;
-  gravity_force_vector_publisher_->publish(gravity_force_vector_msg);
+
 
   jacobian_array =  franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
-  jacobian_endeffector = franka_robot_model_->getBodyJacobian(franka::Frame::kFlange);
   
-  for (std::size_t i = 0; i < jacobian_endeffector.size(); ++i) {
-      dJ[i] = (jacobian_endeffector[i] - jacobian_prev_[i]) / dt;
-  }
-
   
-  //calcuate accelerations
-  ddq_ = (dq_ - dq_prev_)/dt;  //calculate acceleration
-  //publish acceleration
-  messages_fr3::msg::Acceleration acceleration_msg;
-  for (int i = 0; i < 7; ++i) {
-    acceleration_msg.acceleration[i] = ddq_(i);
-  }
-  acceleration_publisher_->publish(acceleration_msg);
-
   std::array<double, 16> pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
-  std::array<double, 16> pose_pub = franka_robot_model_->getPoseMatrix(franka::Frame::kFlange);
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> gravity_force_vector(gravity_force_vector_array.data());
   jacobian = Eigen::Map<Eigen::Matrix<double, 6, 7>> (jacobian_array.data());
+  //positional_jacobian
+  Jp = jacobian.topRows(3);
   
-  //Publish Jacobian here
-  messages_fr3::msg::Jacobian jacobian_msg;
-  jacobian_msg.jacobian = jacobian_endeffector;
-  jacobian_msg.d_jacobian = dJ;
-  jacobian_publisher_->publish(jacobian_msg);
-
-  //publish transformation matrix
-  messages_fr3::msg::TransformationMatrix transformation_msg;
-  transformation_msg.transformation_matrix = pose_pub;
-  transformation_publisher_->publish(transformation_msg);
+  
   
   pseudoInverse(jacobian.transpose(), jacobian_transpose_pinv);
   pseudoInverse(jacobian, jacobian_pinv);
@@ -343,63 +436,34 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
   Eigen::Quaterniond error_quaternion(orientation.inverse() * orientation_d_);
   error.tail(3) << error_quaternion.x(), error_quaternion.y(), error_quaternion.z();
   error.tail(3) << -transform.rotation() * error.tail(3);
-  I_error += Sm * dt * integrator_weights.cwiseProduct(error);
-  for (int i = 0; i < 6; i++){
-    I_error(i,0) = std::min(std::max(-max_I(i,0),  I_error(i,0)), max_I(i,0)); 
-  }
 
-  Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
-  // Theta = T*Lambda;
-  // F_impedance = -1*(Lambda * Theta.inverse() - IDENTITY) * F_ext;
-  //Inertia of the robot
-   switch (mode_)
-  {
-  case 1: 
-    Theta = Lambda;
-    F_impedance = -1 * (D * (jacobian * dq_) + K * error /*+ I_error*/);
-     break; 
-
-  case 2:
-    Theta = T*Lambda;
-    F_impedance = -1*(Lambda * Theta.inverse() - IDENTITY) * F_ext;
-    break;
-  
-  default:
-    break;
-  }
-
-  F_ext = 0.9 * F_ext + 0.1 * O_F_ext_hat_K_M; //Filtering 
-  I_F_error += dt * Sf* (F_contact_des - F_ext);
-  F_cmd = Sf*(0.4 * (F_contact_des - F_ext) + 0.9 * I_F_error + 0.9 * F_contact_des);
+  error.head(3) << position - position_d_;
 
   //Calculate friction forces
   N = (Eigen::MatrixXd::Identity(7, 7) - jacobian_pinv * jacobian);
-  Eigen::VectorXd tau_task(7), tau_nullspace(7), tau_d(7), tau_impedance(7);
+  Eigen::VectorXd  tau_nullspace(7), tau_d(7);
   pseudoInverse(jacobian.transpose(), jacobian_transpose_pinv);
 
   tau_nullspace <<  N * (nullspace_stiffness_ * config_control * (q_d_nullspace_ - q_) - //if config_control = true we control the whole robot configuration
                     (2.0 * sqrt(nullspace_stiffness_)) * dq_);  // if config control ) false we don't care about the joint position
 
+  // TODO: Implement Riemannian Motion Policy
   
-
+  Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
+  d_obs1 = calculateNearestPointOnSphere(position, sphere_center, sphere_radius);
+  //d_obs1 = d_obs_prev1 * 0.99 + d_obs1 * 0.01;
+  x_dd_des = Lambda.inverse()*(-K_RMP * error - D_RMP * jacobian * dq_);
+  f_obs_tilde1 = Lambda.inverse()*calculate_f_obstacle(d_obs1, d_obs_prev1);
+  A_obs_tilde1 = calculate_A_obstacle(d_obs1, f_obs_tilde1);
+  rmp_joint_limit_avoidance();
+  calculateRMP_global(A_obs_tilde1, f_obs_tilde1);
+  get_ddq();
+  d_obs_prev1 = d_obs1;
+  // Calculate the desired torque
+  tau_RMP = M * ddq_;
+  // Calculate friction torques
   calculate_tau_friction();
-  
-  calculate_tau_gravity(coriolis, gravity_force_vector, jacobian);
-  
-  //calculate_gravity_torques();
-  //calculate_gravity_torques_ana(jacobian);
-  tau_gravity_error = tau_gravity - gravity_force_vector;
-  tau_impedance = jacobian.transpose() * Sm * (F_impedance /*+ F_repulsion + F_potential*/) + jacobian.transpose() * Sf * F_cmd;
-  kp.diagonal() << 300,300,300,300, 100, 100, 80;  // kp gains per joint
-  kd.diagonal() << 34.64, 34.64, 34.64, 34.64, 20, 20 , 17.88;  // kd gains per joint  
-  auto tau_d_placeholder = kp * (q_d_ - q_) - kd * dq_ + coriolis;  //use this controller for inertia estimation
-   //set impedance to zero for gravity torque test, also remove coriolis from control law
-  //set friction to zero for gravity torque test
-  tau_impedance.setZero();
-  tau_friction.setZero();
-  coriolis.setZero();
-  tau_nullspace.setZero();
-  //auto tau_d_placeholder =  tau_impedance + tau_nullspace + tau_friction + coriolis - tau_gravity_error; //add nullspace, friction, gravity and coriolis components to desired torque
+  auto tau_d_placeholder = tau_RMP + coriolis + tau_friction; //add nullspace, friction, gravity and coriolis components to desired torque
   tau_d << tau_d_placeholder;
   tau_d << saturateTorqueRate(tau_d, tau_J_d_M);  // Saturate torque rate to avoid discontinuities
   tau_J_d_M = tau_d;
@@ -412,53 +476,29 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
   if (duration_cast<seconds>(current_time - last_log_time).count() >= 0.1) {
     last_log_time = current_time;  // Reset the last log time
         
-  // Log gravity_force_vector
-    RCLCPP_INFO(get_node()->get_logger(), "Gravity Vector (Franka): [%f, %f, %f, %f, %f, %f, %f]",
-                    gravity_force_vector[0], gravity_force_vector[1], gravity_force_vector[2],
-                    gravity_force_vector[3], gravity_force_vector[4], gravity_force_vector[5], gravity_force_vector[6]);
-
-    RCLCPP_INFO(get_node()->get_logger(), "Modelled Gravity Torque (Observer): [%f, %f, %f, %f, %f, %f, %f]",
-                    tau_gravity[0], tau_gravity[1], tau_gravity[2],
-                    tau_gravity[3], tau_gravity[4], tau_gravity[5], tau_gravity[6]);
-
-    RCLCPP_INFO(get_node()->get_logger(), "I_tau: [%f, %f, %f, %f, %f, %f, %f]",
-                    I_tau[0], I_tau[1], I_tau[2],
-                    I_tau[3], I_tau[4], I_tau[5], I_tau[6]);
-    RCLCPP_INFO(get_node()->get_logger(), "residual: [%f, %f, %f, %f, %f, %f, %f]",
-                    residual[0], residual[1], residual[2],
-                    residual[3], residual[4], residual[5], residual[6]);
-    RCLCPP_INFO(get_node()->get_logger(), "dq_: [%f, %f, %f, %f, %f, %f, %f]",
-                    dq_[0], dq_[1], dq_[2],
-                    dq_[3], dq_[4], dq_[5], dq_[6]);
-
-
   }
-
 
   for (size_t i = 0; i < 7; ++i) {
     command_interfaces_[i].set_value(tau_d(i));
   }
   
   if (outcounter % 1000/update_frequency == 0){
-    std::cout << "F_ext_robot [N]" << std::endl;
-    std::cout << O_F_ext_hat_K << std::endl;
-    std::cout << O_F_ext_hat_K_M << std::endl;
-    std::cout << "Lambda  Thetha.inv(): " << std::endl;
-    std::cout << Lambda*Theta.inverse() << std::endl;
-    std::cout << "tau_d" << std::endl;
-    std::cout << tau_d << std::endl;
-    std::cout << "--------" << std::endl;
-    std::cout << tau_nullspace << std::endl;
-    std::cout << "--------" << std::endl;
-    std::cout << tau_impedance << std::endl;
-    std::cout << "--------" << std::endl;
-    std::cout << coriolis << std::endl;
-    std::cout << "Inertia scaling [m]: " << std::endl;
-    std::cout << T << std::endl;
-    std::cout << "F_impedance: " << std::endl;
-    std::cout << F_impedance << std::endl;
-    std::cout << "q: " << std::endl;
-    std::cout << q_ << std::endl;
+    std::cout << "x_dd_des" << std::endl;
+    std::cout << x_dd_des << std::endl;
+    std::cout << "d_ob1" << std::endl;
+    std::cout << d_obs1 << std::endl;
+    std::cout << "error_pose" << std::endl;
+    std::cout << error << std::endl;
+    std::cout << "dq_" << std::endl;
+    std::cout << dq_ << std::endl;
+    std::cout << "ddq_" << std::endl;
+    std::cout << ddq_ << std::endl;
+    std::cout << "tau_RMP" << std::endl;
+    std::cout << tau_RMP << std::endl;
+    std::cout << "f_tot" << std::endl;
+    std::cout << f_tot << std::endl;
+    std::cout << "A_tot" << std::endl;
+    std::cout << A_tot << std::endl;
   }
   outcounter++;
   update_stiffness_and_references();
@@ -466,8 +506,8 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
 }
 }
 
-// namespace cartesian_impedance_control
+// namespace riemannian_motion_policy
 #include "pluginlib/class_list_macros.hpp"
 // NOLINTNEXTLINE
-PLUGINLIB_EXPORT_CLASS(cartesian_impedance_control::CartesianImpedanceController,
+PLUGINLIB_EXPORT_CLASS(riemannian_motion_policy::RiemannianMotionPolicy,
                        controller_interface::ControllerInterface)
