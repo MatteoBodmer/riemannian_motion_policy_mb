@@ -121,7 +121,7 @@ Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::Vector
   double alpha_damp;
   double eta_damp = 3.0;
   double mu_damp = 1.0;
-  double epsilon = 0.1;
+  double epsilon = 0.001;
   Eigen::Matrix<double, 3, 1> P_obs = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_damping = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_obstacle = Eigen::MatrixXd::Zero(3,1);
@@ -159,7 +159,6 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
                                                              const Eigen::VectorXd& f_obstacle_tilde, double r_a) {
   double alpha_a = 1.0;
   double beta_x = 1.0;
-  
   Eigen::Matrix3d H_obs = Eigen::Matrix3d::Identity();
   Eigen::Matrix3d A_stretch = Eigen::Matrix3d::Identity();
   Eigen::Vector3d xsi = Eigen::Vector3d::Zero();
@@ -258,12 +257,12 @@ void RiemannianMotionPolicy::get_ddq(){
   Eigen::MatrixXd Link6_b = jacobian6tilde.transpose() * A_obs_tilde6 * f_obs_tilde6;
   Eigen::MatrixXd Link7_b = jacobian7tilde.transpose() * A_obs_tilde7 * f_obs_tilde7;
   Eigen::MatrixXd Hand_b = jacobianEEtilde.transpose() * A_obs_tildeEE * f_obs_tildeEE;
-  Eigen::MatrixXd A_total = jacobian_tilde.transpose()*I_66 *jacobian_tilde + Hand_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + lambda_RMP * I_77;
+  Eigen::MatrixXd A_total = jacobian_tilde.transpose()*I_66 *jacobian_tilde + Hand_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + lambda_RMP * I_77 * 1.5;
   Eigen::MatrixXd A_total_inv;
     
   A_total_inv = A_total.inverse();
   
-  ddq_ = D_sigma * A_total_inv* (jacobian_tilde.transpose() * I_66 * x_dd_des + Hand_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b + lambda_RMP * h_joint_limits);
+  ddq_ = D_sigma * A_total_inv* (jacobian_tilde.transpose() * I_66 * x_dd_des + Hand_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b + lambda_RMP * h_joint_limits * 1.5);
   
   //ddq_ = D_sigma * (jacobian_tilde.transpose()*A_tot *jacobian_tilde + lambda_RMP * I_77 ).inverse() * 
   //                  (jacobian_tilde.transpose() * A_tot * f_tot + lambda_RMP * h_joint_limits);
@@ -589,19 +588,19 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
   x_dd_des = Lambda.inverse()*(-K_RMP * (error) - D_RMP * jacobian * dq_);
   f_obs_tildeEE = calculate_f_obstacle(d_obsEE, Jp_obstacleEE);
-  A_obs_tildeEE = calculate_A_obstacle(d_obsEE, f_obs_tildeEE, 0.5);
+  A_obs_tildeEE = calculate_A_obstacle(d_obsEE, f_obs_tildeEE, 1.0);
   f_obs_tilde2 = calculate_f_obstacle(d_obs2, Jp_obstacle2);
-  A_obs_tilde2 = calculate_A_obstacle(d_obs2, f_obs_tilde2, 0.5);
+  A_obs_tilde2 = calculate_A_obstacle(d_obs2, f_obs_tilde2, 0.1);
   f_obs_tilde3 = calculate_f_obstacle(d_obs3, Jp_obstacle3);
-  A_obs_tilde3 = calculate_A_obstacle(d_obs3, f_obs_tilde3, 0.5);
+  A_obs_tilde3 = calculate_A_obstacle(d_obs3, f_obs_tilde3, 1.0);
   f_obs_tilde4 = calculate_f_obstacle(d_obs4, Jp_obstacle4);
-  A_obs_tilde4 = calculate_A_obstacle(d_obs4, f_obs_tilde4, 0.5);
+  A_obs_tilde4 = calculate_A_obstacle(d_obs4, f_obs_tilde4, 1.0);
   f_obs_tilde5 = calculate_f_obstacle(d_obs5, Jp_obstacle5);
-  A_obs_tilde5 = calculate_A_obstacle(d_obs5, f_obs_tilde5, 0.5);
+  A_obs_tilde5 = calculate_A_obstacle(d_obs5, f_obs_tilde5, 1.0);
   f_obs_tilde6 = calculate_f_obstacle(d_obs6, Jp_obstacle6);
-  A_obs_tilde6 = calculate_A_obstacle(d_obs6, f_obs_tilde6, 0.5);
+  A_obs_tilde6 = calculate_A_obstacle(d_obs6, f_obs_tilde6, 1.0);
   f_obs_tilde7 = calculate_f_obstacle(d_obs7, Jp_obstacle7);
-  A_obs_tilde7 = calculate_A_obstacle(d_obs7, f_obs_tilde7, 0.5);
+  A_obs_tilde7 = calculate_A_obstacle(d_obs7, f_obs_tilde7, 1.0);
   rmp_joint_limit_avoidance();
   jacobian2tilde = jacobian2_obstacle * D_sigma;
   jacobian3tilde = jacobian3_obstacle * D_sigma;

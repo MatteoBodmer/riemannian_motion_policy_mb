@@ -386,7 +386,7 @@ public:
     Eigen::Matrix<double, 6, 6> cartesian_stiffness_target_;                                 // impedance damping term
     Eigen::Matrix<double, 6, 6> cartesian_damping_target_;                                   // impedance damping term
     Eigen::Matrix<double, 6, 6> cartesian_inertia_target_;                                   // impedance damping term
-    Eigen::Vector3d position_d_target_ = {0.5, -0.3, 0.5};
+    Eigen::Vector3d position_d_target_ = {0.2, 0.0, 0.6};
     Eigen::Vector3d rotation_d_target_ = {M_PI, 0.0, 0.0};
     Eigen::Quaterniond orientation_d_target_;
     Eigen::Vector3d position_d_;
