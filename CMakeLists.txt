@@ -27,6 +27,12 @@ find_package(franka_semantic_components REQUIRED)
 find_package(generate_parameter_library)
 find_package(std_msgs REQUIRED)
 find_package(messages_fr3 REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(moveit_visual_tools REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(shape_msgs REQUIRED)
+
 
 
 add_library(
@@ -36,6 +42,7 @@ add_library(
         src/user_input_server.cpp
         src/friction_compensation.cpp
         src/gravity_compensation.cpp
+        
         )
 target_include_directories(
         ${PROJECT_NAME}
@@ -55,6 +62,9 @@ ament_target_dependencies(
         std_msgs
         messages_fr3
         franka_msgs
+        visualization_msgs
+        moveit_ros_planning_interface
+        moveit_visual_tools
 )
 
 
@@ -100,6 +110,8 @@ if(BUILD_TESTING)
     find_package(ament_cmake_gmock REQUIRED)
     find_package(controller_manager REQUIRED)
     find_package(ros2_control_test_assets REQUIRED)
+    find_package(moveit_ros_planning_interface REQUIRED)
+
 
     set(CPP_DIRECTORIES src include)
     ament_clang_format(CONFIG_FILE ../.clang-format ${CPP_DIRECTORIES})

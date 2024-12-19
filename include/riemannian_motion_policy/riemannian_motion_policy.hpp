@@ -46,6 +46,10 @@
 
 #include "franka_hardware/franka_hardware_interface.hpp"
 #include <franka_hardware/model.hpp>
+#include "visualization_msgs/msg/marker.hpp"
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <moveit_msgs/msg/collision_object.hpp>
+#include <geometric_shapes/shape_operations.h>
 
 #include "franka_msgs/msg/franka_robot_state.hpp"
 #include "franka_msgs/msg/errors.hpp"
@@ -58,6 +62,7 @@
 #include "franka_semantic_components/franka_robot_model.hpp"
 #include "franka_semantic_components/franka_robot_state.hpp"
 #include "messages_fr3/msg/acceleration.hpp"
+#include "messages_fr3/msg/closest_point.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #define IDENTITY Eigen::MatrixXd::Identity(6, 6)
 
@@ -96,15 +101,19 @@ public:
     rclcpp::Subscription<franka_msgs::msg::FrankaRobotState>::SharedPtr franka_state_subscriber = nullptr;
     rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr desired_pose_sub;
     rclcpp::Service<messages_fr3::srv::SetPose>::SharedPtr pose_srv_;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_publisher_;
+    rclcpp::Subscription<messages_fr3::msg::ClosestPoint>::SharedPtr closest_point_sub_;
+
 
 
     //Functions
     void topic_callback(const std::shared_ptr<franka_msgs::msg::FrankaRobotState> msg);
+    void closestPointCallback(const messages_fr3::msg::ClosestPoint::SharedPtr msg);
     void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void desiredJointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void reference_pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg);
     void rmp_joint_limit_avoidance();
-    void calculateRMP_global(const Eigen::MatrixXd& A_obs_tilde, 
+    void calculateRMP_EE(const Eigen::MatrixXd& A_obs_tilde, 
                          const Eigen::VectorXd& f_obs_tilde);
     void get_ddq();
     void updateJointStates();
@@ -118,13 +127,13 @@ public:
     
     Eigen::Matrix<double, 7, 1> saturateTorqueRate(const Eigen::Matrix<double, 7, 1>& tau_d_calculated, const Eigen::Matrix<double, 7, 1>& tau_J_d);  
     std::array<double, 6> convertToStdArray(const geometry_msgs::msg::WrenchStamped& wrench);
-    Eigen::VectorXd calculate_f_obstacle(const Eigen::VectorXd& d_obs,
-                                       const Eigen::VectorXd& d_obs_prev);
+    Eigen::VectorXd calculate_f_obstacle(const Eigen::VectorXd& d_obs, const Eigen::MatrixXd& Jp_obstacle);
     Eigen::MatrixXd calculate_A_obstacle(const Eigen::VectorXd& d_obs,
-                                      const Eigen::VectorXd& f_obs);
+                                      const Eigen::VectorXd& f_obs, double r_a);
     Eigen::Vector3d calculateNearestPointOnSphere(const Eigen::Vector3d& position,
                                                                       const Eigen::Vector3d& sphereCenter, 
-                                                                      double radius); 
+                                                                      double radius);
+    Eigen::MatrixXd calculate_J_obstacle(const Eigen::MatrixXd& link_jacobian_prev, const Eigen::MatrixXd& link_jacobian_next,const Eigen::VectorXd& points_link ,const Eigen::VectorXd& coord_link);
     //State vectors and matrices
     Eigen::Matrix<double, 7, 7> M;
     std::array<double, 7> q_subscribed;
@@ -206,7 +215,7 @@ public:
     double c = 0.1;
     double gamma_p = 15;
     double gamma_d = 7.7;
-    const Eigen::Matrix<double, 7, 1> q_0= (Eigen::VectorXd(7) << 0.109, -0.189, -0.104, -2.09, -0.0289, 1.90, 0.0189).finished();
+    const Eigen::Matrix<double, 7, 1> q_0= (Eigen::VectorXd(7) << 0.0, 0.0, 0.0, -2.09, 0.0, 1.90, 0.785).finished();
     const Eigen::Matrix<double, 7, 1> q_lower_limit = (Eigen::VectorXd(7) << -2.89725, -1.8326,-2.89725, -3.0718, -2.87979, 0.436332, -3.05433).finished();
     const Eigen::Matrix<double, 7, 1> q_upper_limit = (Eigen::VectorXd(7) << 2.89725,1.8326, -2.89725, -0.122173, 2.87979, 4.62512, 3.05433).finished();
     Eigen::Matrix<double, 6, 7> jacobian_tilde = Eigen::MatrixXd::Zero(6,7);
@@ -219,7 +228,7 @@ public:
     double lambda_RMP = 0.01;
     Eigen::Matrix<double, 7, 1> ddq_;
     Eigen::Matrix<double, 7, 1> tau_RMP;
-    Eigen::Matrix<double, 6, 6> K_RMP =  (Eigen::MatrixXd(6,6) << 250,   0,   0,   0,   0,   0,
+    Eigen::Matrix<double, 6, 6> K_RMP = (Eigen::MatrixXd(6,6) << 250,   0,   0,   0,   0,   0,
                                                                 0, 250,   0,   0,   0,   0,
                                                                 0,   0, 250,   0,   0,   0,  
                                                                 0,   0,   0, 20,   0,   0,
@@ -232,22 +241,94 @@ public:
                                                                 0,   0,   0,   9,   0,   0,
                                                                 0,   0,   0,   0,   9,   0,
                                                                 0,   0,   0,   0,   0,   6).finished();
+
+    double beta_orientation = 0;
     //RMP Obstacle Avoidance Parameters
+    //Minimum distance to obstacle per link
+    Eigen::Vector3d d_obs2 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    Eigen::Vector3d d_obs3 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    Eigen::Vector3d d_obs4 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    Eigen::Vector3d d_obs5 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    Eigen::Vector3d d_obs6 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    Eigen::Vector3d d_obs7 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    Eigen::Vector3d d_obsEE = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    // Coordinates of the closest point to the obstacle
+    Eigen::Vector3d closest_point2 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d closest_point3 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d closest_point4 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d closest_point5 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d closest_point6 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d closest_point7 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d closest_pointEE = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    // Coordinates of joints
+    Eigen::Vector3d joint2 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d joint3 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d joint4 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d joint5 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d joint6 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d joint7 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    Eigen::Vector3d jointEE = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+
+    Eigen::Matrix<double, 6, 7> jacobian2 = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian2tilde = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian3 = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian3tilde = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian4 = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian4tilde = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian5 = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian5tilde = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian6 = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian6tilde = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian7 = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian7tilde = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobianEE = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobianEEtilde = Eigen::MatrixXd::Zero(6,7);
+    std::array<double, 42> jacobian_array2;
+    std::array<double, 42> jacobian_array3;
+    std::array<double, 42> jacobian_array4;
+    std::array<double, 42> jacobian_array5;
+    std::array<double, 42> jacobian_array6;
+    std::array<double, 42> jacobian_array7;
+    std::array<double, 42> jacobian_arrayEE;
+    Eigen::Matrix<double, 6, 7> jacobian2_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian3_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian4_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian5_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian6_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobian7_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobianEE_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 3, 7> Jp_obstacle2;
+    Eigen::Matrix<double, 3, 7> Jp_obstacle3 ;
+    Eigen::Matrix<double, 3, 7> Jp_obstacle4;
+    Eigen::Matrix<double, 3, 7> Jp_obstacle5;
+    Eigen::Matrix<double, 3, 7> Jp_obstacle6;
+    Eigen::Matrix<double, 3, 7> Jp_obstacle7;
+    Eigen::Matrix<double, 3, 7> Jp_obstacleEE ;
     
-    Eigen::Vector3d d_obs1 ;
-    Eigen::Vector3d d_obs_prev1 ;
-    Eigen::Matrix<double, 3, 7> Jp = Eigen::MatrixXd::Zero(3,1);
-    
-    Eigen::VectorXd f_obs_tilde1 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tilde1 = Eigen::MatrixXd::Identity(6,6);
+
+    Eigen::VectorXd f_obs_tilde2 = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tilde2 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_obs_tilde3 = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tilde3 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_obs_tilde4 = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tilde4 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_obs_tilde5 = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tilde5 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_obs_tilde6 = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tilde6 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_obs_tilde7 = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tilde7 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_obs_tildeEE = Eigen::VectorXd::Zero(6); 
+    Eigen::Matrix<double, 6, 6> A_obs_tildeEE = Eigen::MatrixXd::Zero(6,6);
   
     Eigen::Vector3d sphere_center = (Eigen::VectorXd(3) << 0.3, 0.0, 0.5).finished();
-    double sphere_radius = 0.0;
+    double sphere_radius = 0.1;
     
     Eigen::VectorXd f_tot = Eigen::VectorXd::Zero(6);  // Correct dynamic-size initialization
     Eigen::MatrixXd A_tot = Eigen::MatrixXd::Zero(6,6);  // Dynamic-size matrix
     Eigen::MatrixXd A_tot_pinv;
 
+    std::string frame;
 
 
 
@@ -305,7 +386,7 @@ public:
     Eigen::Matrix<double, 6, 6> cartesian_stiffness_target_;                                 // impedance damping term
     Eigen::Matrix<double, 6, 6> cartesian_damping_target_;                                   // impedance damping term
     Eigen::Matrix<double, 6, 6> cartesian_inertia_target_;                                   // impedance damping term
-    Eigen::Vector3d position_d_target_ = {0.5, 0.0, 0.5};
+    Eigen::Vector3d position_d_target_ = {0.5, -0.3, 0.5};
     Eigen::Vector3d rotation_d_target_ = {M_PI, 0.0, 0.0};
     Eigen::Quaterniond orientation_d_target_;
     Eigen::Vector3d position_d_;

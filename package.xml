@@ -11,11 +11,15 @@
 
   <depend>rclcpp</depend>
   <depend>controller_interface</depend>
+  <depend>visualization_msgs</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>franka_msgs</depend>
   <depend>franka_semantic_components</depend>
   <depend>messages_fr3</depend>
+  <depend>moveit_visual_tools</depend>
+  <build_depend>moveit_ros_planning_interface</build_depend>
+  <exec_depend>moveit_ros_planning_interface</exec_depend>
 
 
   <exec_depend>franka_description</exec_depend>

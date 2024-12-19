@@ -8,7 +8,7 @@ namespace riemannian_motion_policy{
         if (friction_){
             double alpha = 0.01;//constant for exponential filter in relation to static friction moment        
             dq_filtered = alpha* dq_ + (1 - alpha) * dq_filtered; //Filtering dq of every joint
-            tau_impedance_filtered = alpha* tau_impedance + (1 - alpha) * tau_impedance_filtered; //Filtering tau_admittance
+            tau_impedance_filtered = alpha* tau_RMP + (1 - alpha) * tau_impedance_filtered; //Filtering tau_admittance
             //Creating and filtering a "fake" tau_admittance with own weights, optimized for friction compensation (else friction compensation would get stronger with higher stiffnesses)
             tau_threshold = jacobian.transpose() * Sm * (-alpha * (D_friction*(jacobian*dq_) + K_friction * error)) + (1 - alpha) * tau_threshold;
             //Creating "fake" dq, that acts only in the impedance-space, else dq in the nullspace also gets compensated, which we do not want due to null-space movement

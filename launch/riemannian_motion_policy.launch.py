@@ -46,7 +46,7 @@ def generate_launch_description():
             description='ID of the type of arm used. Supported values: fer, fr3, fp3'),
         DeclareLaunchArgument(
             use_rviz_parameter_name,
-            default_value='false',
+            default_value='true',
             description='Visualize the robot in Rviz'),
         DeclareLaunchArgument(
             use_fake_hardware_parameter_name,
@@ -76,6 +76,8 @@ def generate_launch_description():
                               }.items(),
         ),
 
+        
+        
         # First, run set_load.sh
         set_load,
 
