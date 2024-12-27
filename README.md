@@ -1,61 +1,95 @@
-# Riemannian Motion Policy
-### ROS2 RMP_controller
+# Riemannian Motion Policy (RMP) Controller
 
-Prerequisites:
-* ROS2 humble <br />
-* Libfranka 0.13.0 or newer <br />
-* franka_ros2 v0.13.1 <br />
+### Prerequisites
+Ensure you have the following installed and configured:
 
-For further information, please refer to the [Franka ROS2 FCI documentation](https://support.franka.de/docs/franka_ros2.html)
+- **ROS 2 Humble**
+- **libfranka v0.13.0 or newer**
+- **franka_ros2 v0.13.1 or newer**
 
-Once you have everything set up, follow the steps below to get the controller running.
+For detailed setup instructions, please refer to the [Franka ROS2 FCI documentation](https://support.franka.de/docs/franka_ros2.html).
 
-### RMP installation
-Clone this repository in the src directory of your franka_ros2_ws: <br />
+---
+
+## Installation
+
+### Step 1: Clone the RMP Repository
+Clone this repository into the `src` directory of your `franka_ros2_ws` workspace:
+
 ```bash
-cd franka_ros2_ws/src 
+cd ~/franka_ros2_ws/src
 git clone https://github.com/acaviezel/Riemannian-Motion-Policies-Franka-Emika-Robot.git
-```
-For the moment, you need to add the following lines of code, to your controllers.yaml file inside franka_ros2/franka_bringup/config/:
-```bash
+
+Step 2: Modify Configuration for RMP Controller
+
+Add the following lines to your controllers.yaml file, located at franka_ros2/franka_bringup/config/:
+
 riemannian_motion_policy:
-      type: riemannian_motion_policy/RiemannianMotionPolicy
-```
+  type: riemannian_motion_policy/RiemannianMotionPolicy
 
-Clone the messages package in the src directory: <br />
-```bash
-cd franka_ros2_ws/src
+Step 3: Clone the Messages Package
+
+Clone the messages_fr3 package into the src directory of your workspace:
+
+cd ~/franka_ros2_ws/src
 git clone https://github.com/acaviezel/messages_fr3.git
-```
 
-Build the package or whole workspace: <br />
-```bash
+Step 4: Build the Workspace
+
+Build either the specific package or the entire workspace:
+
+    To build the RMP controller package:
+
 colcon build --packages-select cartesian_impedance_control --cmake-args -DCMAKE_BUILD_TYPE=Release
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release #Builds all the packages in your src folder
-```
-If not yet done, ensure your setup is always source by adding the following line to the end of your .bashrc file (to get access to it, you need to execute `nano .bashrc` in your home directory). : <br />
-```bash
-source /home/<user>/franka_ros2_ws/install/setup.sh 
-```
 
-### Distance Calculator and MoveIt Scene Loader
-Follow the installation guidelines from [motion_planning_mt](https://github.com/acaviezel/motion_planning_mt)
+To build all packages in the src folder:
 
-### Launch controller with MoveIt
-After building the whole workspace, the controller can now be launched.
-1. Launch the moveit environment and the RMP controller.
-```
+    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+Step 5: Update .bashrc File
+
+To ensure your setup is sourced each time you open a terminal, add the following line to the end of your .bashrc file:
+
+source ~/franka_ros2_ws/install/setup.sh
+
+To edit the .bashrc file:
+
+nano ~/.bashrc
+
+After editing, reload the file:
+
+source ~/.bashrc
+
+Additional Setup: Distance Calculator and MoveIt Scene Loader
+
+Follow the installation instructions provided in the motion_planning_mt repository.
+Launching the RMP Controller with MoveIt
+Step 1: Start the MoveIt Environment
+
+Launch the MoveIt environment and the RMP controller:
+
 ros2 launch franka_moveit_config moveit.launch.py robot_ip:=<fci-ip>
-```
-2. Run the scene node, which populates three cylinders (adjustable).
-```
+
+Replace <fci-ip> with the IP address of your Franka Control Interface (FCI).
+Step 2: Launch the Scene Node
+
+Run the scene node to populate the environment with three cylinders (adjustable as needed):
+
 ros2 run motion_planning_mt cylinder_scene
-```
-3. Run the distance calculator node, which calculates the distance between the closest obstacle and each robot link.
-```
+
+Step 3: Launch the Distance Calculator
+
+Start the node to calculate the distance between each robot link and the nearest obstacle:
+
 ros2 run motion_planning_mt distance_calculator
-```
-To visualize the obstacles and the minimum distance in RViz, add two ROS2 topics. In displays panel, click "Add" button on the lower left corner.
-   1. Add one MarkerArray, set the topic to which it subscribes to `/rviz_visual_tools` (If not already subscribed).
-   2. Add one MarkerArray, set the topic to which it subscribes to `/minimum_distance_visualization`.
+
+Step 4: Visualize Obstacles and Minimum Distances in RViz
+
+To visualize the obstacles and the minimum distance in RViz:
+
+    Open the Displays panel in RViz.
+    Click the "Add" button (bottom left corner).
+    Add the following:
+        MarkerArray: Set the topic to /rviz_visual_tools.
+        MarkerArray: Set the topic to /minimum_distance_visualization.
 
