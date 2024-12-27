@@ -1,5 +1,6 @@
 # Riemannian Motion Policy (RMP) Controller
-
+This repository implements Riemannian Motion Policies (RMPs) for the Franka Emika robot. RMPs enable modular motion generation, incorporating policies such as obstacle avoidance and joint limit avoidance. 
+The theoretical foundation is based on the paper ["Riemannian Motion Policies" by Nathan D. Ratliff et al.](https://arxiv.org/abs/1801.02854)
 ### Prerequisites
 Ensure you have the following installed and configured:
 
