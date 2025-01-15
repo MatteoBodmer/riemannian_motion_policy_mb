@@ -19,6 +19,7 @@
 #include <string>
 #include <Eigen/Eigen>
 #include <chrono>
+#include <yaml-cpp/yaml.h>>
 
 
 using namespace std::chrono;
@@ -86,49 +87,28 @@ Eigen::Vector3d RiemannianMotionPolicy::calculateNearestPointOnSphere(const Eige
     return nearestPoint;
 }
 
-//translate Jacobian to minimal distance point
-Eigen::MatrixXd RiemannianMotionPolicy::calculate_J_obstacle(const Eigen::MatrixXd& link_jacobian_prev, const Eigen::MatrixXd& link_jacobian_next,const Eigen::VectorXd& points_link ,const Eigen::VectorXd& coord_link) {
-  // Check for valid values
-  Eigen::MatrixXd J_obstacle = Eigen::MatrixXd::Zero(6, 7);
-  Eigen::MatrixXd J_p_obstacle = Eigen::MatrixXd::Zero(3, 7);
-  Eigen::MatrixXd J_r_obstacle = Eigen::MatrixXd::Zero(3, 7);
-  // Rotation part stays the same
-  J_r_obstacle = link_jacobian_next.bottomRows(3);
-  // Translation part
-  J_p_obstacle = link_jacobian_prev.topRows(3);
-  //make skewsymmetric matrix of coordlink
-  Eigen::Vector3d r = points_link - coord_link;
-  Eigen::Matrix3d r_skew;
-  r_skew << 0, -r(2), r(1),
-            r(2), 0, -r(0),
-            -r(1), r(0), 0;
-  J_p_obstacle = J_p_obstacle + r_skew * J_r_obstacle;
-  J_obstacle.topRows(3) = J_p_obstacle;
-  J_obstacle.bottomRows(3) = J_r_obstacle;
-  return J_obstacle;
-}
-
-
 //RMP calculation for obstacle avoidance
 Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::VectorXd& d_obs, const Eigen::MatrixXd& Jp_obstacle) {
   
   Eigen::Matrix<double, 3, 1> nabla_d = Eigen::MatrixXd::Zero(3,1);
   double alpha_rep;
-  double eta_rep = 3.8;
-  double mu_rep = 0.5;
   double distance;
   Eigen::Matrix<double, 3, 1> f_repulsive = Eigen::MatrixXd::Zero(3,1);
   double alpha_damp;
-  double eta_damp = 3.0;
-  double mu_damp = 1.0;
-  double epsilon = 0.001;
   Eigen::Matrix<double, 3, 1> P_obs = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_damping = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_obstacle = Eigen::MatrixXd::Zero(3,1);
   
   // Compute nabla_d
-  nabla_d = d_obs/(d_obs.norm());
+  nabla_d = d_obs/(std::max(d_obs.norm(),0.001));
   distance = d_obs.norm();
+  double nabla_x = nabla_d(0);
+  double nabla_y = nabla_d(1);
+  double nabla_z = nabla_d(2);
+  double v_x = (Jp_obstacle.row(0).dot(dq_)) * (Jp_obstacle.row(0).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_x;
+  double v_y = (Jp_obstacle.row(1).dot(dq_)) * (Jp_obstacle.row(1).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_y;
+  double v_z = (Jp_obstacle.row(2).dot(dq_)) * (Jp_obstacle.row(2).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_z;
+
   
   alpha_rep = eta_rep * std::exp(-distance / mu_rep);
   //alpha_rep = eta_rep * 1 / (std::pow(distance + mu_rep, 2));
@@ -136,6 +116,12 @@ Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::Vector
   f_repulsive = alpha_rep * nabla_d.array();
 
   // Compute alpha_damp
+  
+  /*f_damping(0) = -eta_damp *(1 - (1/(1 + exp(-v_x/0.01))))*v_x/((nabla_x/mu_damp)+epsilon);
+  f_damping(1) = -eta_damp * (1 - (1/(1 + exp(-v_y/0.01))))*v_y/((nabla_y/mu_damp)+epsilon);
+  f_damping(2) = -eta_damp * (1 - (1/(1 + exp(-v_z/0.01))))*v_z/((nabla_z/mu_damp)+epsilon);*/
+
+   // Compute alpha_damp
   alpha_damp = eta_damp / ((distance / mu_damp) + epsilon);
 
   // Compute dot product for P_obs
@@ -144,7 +130,7 @@ Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::Vector
 
   // Compute f_damping
   f_damping = -alpha_damp * P_obs.array();
-
+  
   // Compute total f_obstacle
   f_obstacle = f_repulsive + f_damping;
 
@@ -156,9 +142,11 @@ Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::Vector
 }
 
 Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::VectorXd& d_obs,
-                                                             const Eigen::VectorXd& f_obstacle_tilde, double r_a) {
+                                                             const Eigen::VectorXd& f_obstacle_tilde, double r_a,
+                                                             const Eigen::MatrixXd& Jp_obstacle) {
   double alpha_a = 1.0;
   double beta_x = 1.0;
+  
   Eigen::Matrix3d H_obs = Eigen::Matrix3d::Identity();
   Eigen::Matrix3d A_stretch = Eigen::Matrix3d::Identity();
   Eigen::Vector3d xsi = Eigen::Vector3d::Zero();
@@ -168,6 +156,15 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
   Eigen::Matrix3d identity_3 = Eigen::Matrix3d::Identity();
 
   f_obstacle = f_obstacle_tilde.topRows(3);
+  Eigen::Matrix<double, 3, 1> nabla_d = Eigen::MatrixXd::Zero(3,1);
+  nabla_d = d_obs/(std::max(d_obs.norm(), 0.001));
+  double distance = d_obs.norm();
+  double nabla_x = nabla_d(0);
+  double nabla_y = nabla_d(1);
+  double nabla_z = nabla_d(2);
+  double v_x = (Jp_obstacle.row(0).dot(dq_)) * (Jp_obstacle.row(0).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_x;
+  double v_y = (Jp_obstacle.row(1).dot(dq_)) * (Jp_obstacle.row(1).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_y;
+  double v_z = (Jp_obstacle.row(2).dot(dq_)) * (Jp_obstacle.row(2).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_z;
 
   // Check for valid values
   if (!d_obs.allFinite() || !f_obstacle.allFinite()) {
@@ -178,8 +175,6 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
   double c_2 = 1.0 / std::pow(r_a, 2);
   double w_r;
 
-
-  
   if (d_obs.norm() < r_a) {
 
     w_r = c_2 * d_obs.norm() * d_obs.norm() + c_1 * d_obs.norm() + 1.0;
@@ -195,78 +190,140 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
   A_stretch = xsi * xsi.transpose();
   H_obs = beta_x * A_stretch + (1.0 - beta_x) * identity_3;
   A_obs = w_r * H_obs ;
+
+  /*A_obs(0,0) = (1 - (1/(1 + exp(-v_x/0.01))))*w_r*1/((nabla_x/0.02)+0.001);
+  A_obs(1,1) = (1 - (1/(1 + exp(-v_y/0.01))))*w_r*1/((nabla_y/0.02)+0.001);
+  A_obs(2,2) = (1 - (1/(1 + exp(-v_z/0.01))))*w_r*1/((nabla_z/0.02)+0.001);*/
   
   A_obs_tilde.topLeftCorner(3, 3) = A_obs;
 
-  return A_obs_tilde;
+  return weight_obstacle * A_obs_tilde;
+}
+//RMP for target attraction/axis
+Eigen::MatrixXd RiemannianMotionPolicy::calculate_target_attraction(const Eigen::VectorXd& error, const Eigen::MatrixXd& jacobian) {
+  Eigen::VectorXd f_attract = Eigen::VectorXd::Zero(6);  
+  Eigen::MatrixXd A_attract = Eigen::MatrixXd::Zero(6, 6);
+  Eigen::MatrixXd j_translational = jacobian.topRows(3);
+  Eigen::MatrixXd j_rotational = jacobian.bottomRows(3);
+  Eigen::Vector3d error_position = error.head(3);
+  Eigen::Vector3d error_orientation = error.tail(3);
+  
+  //target metric
+  Eigen::Matrix3d A_position = Eigen::Matrix3d::Zero();
+  
+  double alpha = (1 - alpha_min) *exp((-1 * std::pow(error_position.norm(), 2)) / (2*sigma_a)) + alpha_min;
+  double beta = exp((-1 * std::pow(error_position.norm(), 2)) / (2*sigma_b));
+  Eigen::Matrix3d M_near = Eigen::Matrix3d::Zero();
+  M_near = Eigen::Matrix3d::Identity();
+  Eigen::Matrix3d M_far = Eigen::Matrix3d::Zero();
+  M_far = 0/(std::pow(error_position.norm(), 2)) * error_position * error_position.transpose();
+  A_position = (beta * b + (1 - beta)) * (alpha * M_near + (1 - alpha) * M_far);
+  A_attract.topLeftCorner(3, 3) = A_position;
+  
+  //axis metric
+  Eigen::Matrix3d A_orientation = Eigen::Matrix3d::Zero();
+  double beta_axis = exp((-1 * std::pow(error_position.norm(), 2)) / (2*sigma_o));
+  A_orientation = (beta_axis * b_axis + 1 - beta_axis) * Eigen::Matrix3d::Identity();
+  A_attract.bottomRightCorner(3, 3) = A_orientation;
+  
+  return  weight_attractor * A_attract;
 }
 
+//RMP for global damping
+std::pair<Eigen::VectorXd, Eigen::MatrixXd> RiemannianMotionPolicy::calculate_global_damping(const Eigen::MatrixXd& Jp_obstacle) {
+  Eigen::VectorXd f_damping = Eigen::VectorXd::Zero(6);
+  Eigen::VectorXd velocity = Jp_obstacle * dq_;
+  f_damping.topRows(3) = -k_damp * velocity * velocity.norm();
+  Eigen::MatrixXd A_damping = Eigen::MatrixXd::Zero(6, 6);
+  Eigen::MatrixXd identity_3 = Eigen::Matrix3d::Identity();
+  A_damping.topLeftCorner(3, 3) = velocity.norm() * identity_3 * weight_damping;
+  //return A_damping and f_damping
+  return std::make_pair(f_damping, A_damping);
+}
 
 //RMP calculation of joint limit avoidance
 void RiemannianMotionPolicy::rmp_joint_limit_avoidance(){
   //TODO: Implement the calculation of D_sigma fro joint limits
   //calculate sigma_u = 1/(1 + exp(-q))
+  Eigen::VectorXd x_lower = Eigen::VectorXd::Zero(7);
+  Eigen::VectorXd dx_lower = Eigen::VectorXd::Zero(7);
+  Eigen::VectorXd x_upper = Eigen::VectorXd::Zero(7);
+  Eigen::VectorXd dx_upper = Eigen::VectorXd::Zero(7);
   for (size_t i = 0; i < 7; ++i) {
-    sigma_u(i) = 1/(1 + exp(-q_(i)));  
-    //calculate alpha_u = 1/(1 + exp(-dq_ * c_alpha))
-    alpha_u(i) = 1/(1 + exp(-dq_(i) * c_alpha));
-    //calculate d_ii
-    d_ii(i) = (q_upper_limit(i) - q_lower_limit(i)) * sigma_u(i) * (1 - sigma_u(i));
-    //calculate d_ii_tilde
-    d_ii_tilde(i) = sigma_u(i)*(alpha_u(i)*d_ii(i) + (1 - alpha_u(i))) + (1 - sigma_u(i))*((1- alpha_u(i)) * d_ii(i) + alpha_u(i));
-    //calculate D_sigma
-    D_sigma(i,i) = d_ii_tilde(i);
+    x_lower(i) = (q_(i) - q_lower_limit(i)) / (q_upper_limit(i) - q_lower_limit(i));
+    dx_lower(i) = dq_(i) / (q_upper_limit(i) - q_lower_limit(i));
+
+    x_upper(i) = (q_upper_limit(i) - q_(i)) / (q_upper_limit(i) - q_lower_limit(i));
+    dx_upper(i) = dq_(i) / (q_upper_limit(i) - q_lower_limit(i));
+
+    f_joint_limits_lower(i) = kp_joint_limits/((std::pow(x_lower(i),2)/std::pow(l_p,2)) + accel_eps)  - kd_joint_limits * dx_lower(i);
+    f_joint_limits_upper(i) = kp_joint_limits/((std::pow(x_upper(i),2)/std::pow(l_p,2)) + accel_eps)  - kd_joint_limits * dx_upper(i);
+    A_joint_limits_lower(i,i) = weight_joint_limits * (1 - (1/(1 + exp(-dx_lower(i)/v_m)))) * (1/((x_lower(i)/l_m)+ epsilon_joint_limits));
+    A_joint_limits_upper(i,i) = weight_joint_limits * (1 - (1/(1 + exp(-dx_upper(i)/v_m)))) * (1/((x_upper(i)/l_m)+ epsilon_joint_limits));
+   
   }
-  jacobian_tilde = jacobian * D_sigma;
-  h_joint_limits = D_sigma.inverse() * (gamma_p * (q_0 - q_) - gamma_d * dq_);
 }
-
-void RiemannianMotionPolicy::calculateRMP_EE(const Eigen::MatrixXd& A_obs_tilde, 
-                                                 const Eigen::VectorXd& f_obs_tilde) {
+ //RMP for joint limit velocity
+ void RiemannianMotionPolicy::rmp_joint_velocity_limits(){
+  Eigen::VectorXd q_dot_max = Eigen::VectorXd::Zero(7);
+  q_dot_max << 2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61;
   
-  Eigen::MatrixXd identity_3 = Eigen::MatrixXd::Identity(3, 3);
-  Eigen::MatrixXd A_goal = Eigen::MatrixXd::Zero(6, 6);
-  A_goal.topLeftCorner(3, 3) = identity_3;
-  A_goal.bottomRightCorner(3, 3) = identity_3;
-  A_tot = A_goal + A_obs_tilde;
-    
-  pseudoInverse(A_tot, A_tot_pinv);
-    
-  f_tot = A_tot_pinv*(A_goal * x_dd_des + A_obs_tilde * f_obs_tilde);
-    
+  for (size_t i = 0; i < 7; ++i) {
+    double sign = std::copysign(1.0, dq_(i)); // Returns 1.0 for positive x, -1.0 for negative x.
+    double dq_abs = std::abs(dq_(i));
+    f_joint_velocity(i) = -k_joint_velocity * sign * (dq_abs - (q_dot_max(i) - 1.5));
+    if(dq_abs < (q_dot_max(i) - 1.5)){
+      A_joint_velocity(i,i) = 0.0;
+    }
+    else{
+      A_joint_velocity(i,i) = weight_joint_velocity/(1 - std::pow((dq_abs - (q_dot_max(i) - 1.5)), 2)/(std::pow(1.5, 2)));
+    }
+  }
 }
 
-
-
+void RiemannianMotionPolicy::rmp_cspacetarget(){
+  for (size_t i = 0; i < 7; ++i) {
+    if(std::abs(q_(i)) < theta_cspace){
+      f_c_space_target(i) = kp_c_space_target * (q_0(i) - q_(i)) - kd_c_space_target * dq_(i);
+    }
+    else{
+      double diff = q_0(i) - q_(i);  // Scalar difference
+      double abs_diff = std::abs(diff) + 1e-6;
+      f_c_space_target(i) = kp_c_space_target * theta_cspace * diff/abs_diff - kd_c_space_target * dq_(i);
+    }
+  }
+    A_c_space_target = weight_c_space_target * Eigen::MatrixXd::Identity(7,7);
+}
 //get global joint acceleration for torque calculation
 void RiemannianMotionPolicy::get_ddq(){
 
+
   Eigen::MatrixXd I_77 = Eigen::MatrixXd::Identity(7, 7);
   Eigen::MatrixXd I_66 = Eigen::MatrixXd::Identity(6, 6);
-  Eigen::MatrixXd Link2_a = jacobian2tilde.transpose() * A_obs_tilde2 * jacobian2tilde;
-  Eigen::MatrixXd Link3_a = jacobian3tilde.transpose() * A_obs_tilde3 * jacobian3tilde;
-  Eigen::MatrixXd Link4_a = jacobian4tilde.transpose() * A_obs_tilde4 * jacobian4tilde;
-  Eigen::MatrixXd Link5_a = jacobian5tilde.transpose() * A_obs_tilde5 * jacobian5tilde;
-  Eigen::MatrixXd Link6_a = jacobian6tilde.transpose() * A_obs_tilde6 * jacobian6tilde;
-  Eigen::MatrixXd Link7_a = jacobian7tilde.transpose() * A_obs_tilde7 * jacobian7tilde;
-  Eigen::MatrixXd Hand_a = jacobianEEtilde.transpose() * A_obs_tildeEE* jacobianEEtilde;
-  Eigen::MatrixXd Link2_b = jacobian2tilde.transpose() * A_obs_tilde2 * f_obs_tilde2;
-  Eigen::MatrixXd Link3_b = jacobian3tilde.transpose() * A_obs_tilde3 * f_obs_tilde3;
-  Eigen::MatrixXd Link4_b = jacobian4tilde.transpose() * A_obs_tilde4 * f_obs_tilde4;
-  Eigen::MatrixXd Link5_b = jacobian5tilde.transpose() * A_obs_tilde5 * f_obs_tilde5;
-  Eigen::MatrixXd Link6_b = jacobian6tilde.transpose() * A_obs_tilde6 * f_obs_tilde6;
-  Eigen::MatrixXd Link7_b = jacobian7tilde.transpose() * A_obs_tilde7 * f_obs_tilde7;
-  Eigen::MatrixXd Hand_b = jacobianEEtilde.transpose() * A_obs_tildeEE * f_obs_tildeEE;
-  Eigen::MatrixXd A_total = jacobian_tilde.transpose()*I_66 *jacobian_tilde + Hand_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + lambda_RMP * I_77 * 1.5;
+  Eigen::MatrixXd Link2_a = jacobian2_obstacle.transpose() * A_obs_tilde2 * jacobian2_obstacle + jacobian2_obstacle.transpose() * A_damping2 * jacobian2_obstacle;
+  Eigen::MatrixXd Link3_a = jacobian3_obstacle.transpose() * A_obs_tilde3 * jacobian3_obstacle + jacobian3_obstacle.transpose() * A_damping3 * jacobian3_obstacle;
+  Eigen::MatrixXd Link4_a = jacobian4_obstacle.transpose() * A_obs_tilde4 * jacobian4_obstacle + jacobian4_obstacle.transpose() * A_damping4 * jacobian4_obstacle;
+  Eigen::MatrixXd Link5_a = jacobian5_obstacle.transpose() * A_obs_tilde5 * jacobian5_obstacle + jacobian5_obstacle.transpose() * A_damping5 * jacobian5_obstacle;
+  Eigen::MatrixXd Link6_a = jacobian6_obstacle.transpose() * A_obs_tilde6 * jacobian6_obstacle + jacobian6_obstacle.transpose() * A_damping6 * jacobian6_obstacle;
+  Eigen::MatrixXd Link7_a = jacobian7_obstacle.transpose() * A_obs_tilde7 * jacobian7_obstacle + jacobian7_obstacle.transpose() * A_damping7 * jacobian7_obstacle;
+  Eigen::MatrixXd Hand_a = jacobianEE_obstacle.transpose() * A_obs_tildeEE* jacobianEE_obstacle + jacobianEE_obstacle.transpose() * A_dampingEE * jacobianEE_obstacle;
+  Eigen::MatrixXd Link2_b = jacobian2_obstacle.transpose() * A_obs_tilde2 * f_obs_tilde2 + jacobian2_obstacle.transpose() * A_damping2 * f_damping2;
+  Eigen::MatrixXd Link3_b = jacobian3_obstacle.transpose() * A_obs_tilde3 * f_obs_tilde3 + jacobian3_obstacle.transpose() * A_damping3 * f_damping3; 
+  Eigen::MatrixXd Link4_b = jacobian4_obstacle.transpose() * A_obs_tilde4 * f_obs_tilde4 + jacobian4_obstacle.transpose() * A_damping4 * f_damping4;
+  Eigen::MatrixXd Link5_b = jacobian5_obstacle.transpose() * A_obs_tilde5 * f_obs_tilde5 + jacobian5_obstacle.transpose() * A_damping5 * f_damping5;
+  Eigen::MatrixXd Link6_b = jacobian6_obstacle.transpose() * A_obs_tilde6 * f_obs_tilde6 + jacobian6_obstacle.transpose() * A_damping6 * f_damping6;
+  Eigen::MatrixXd Link7_b = jacobian7_obstacle.transpose() * A_obs_tilde7 * f_obs_tilde7 + jacobian7_obstacle.transpose() * A_damping7 * f_damping7;
+  Eigen::MatrixXd Hand_b = jacobianEE_obstacle.transpose() * A_obs_tildeEE * f_obs_tildeEE + jacobianEE_obstacle.transpose() * A_dampingEE * f_dampingEE;
+  Eigen::MatrixXd A_total = jacobian.transpose()*A_attract *jacobian + Hand_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target;
   Eigen::MatrixXd A_total_inv;
     
   A_total_inv = A_total.inverse();
   
-  ddq_ = D_sigma * A_total_inv* (jacobian_tilde.transpose() * I_66 * x_dd_des + Hand_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b + lambda_RMP * h_joint_limits * 1.5);
   
-  //ddq_ = D_sigma * (jacobian_tilde.transpose()*A_tot *jacobian_tilde + lambda_RMP * I_77 ).inverse() * 
-  //                  (jacobian_tilde.transpose() * A_tot * f_tot + lambda_RMP * h_joint_limits);
   
+  ddq_ =  A_total_inv* (jacobian.transpose() * A_attract * x_dd_des + Hand_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b 
+                          + A_joint_limits_upper * f_joint_limits_upper + A_joint_limits_lower * f_joint_limits_lower
+                          + A_joint_velocity * f_joint_velocity + A_c_space_target * f_c_space_target);
 }
 
 void RiemannianMotionPolicy::arrayToMatrix(const std::array<double,7>& inputArray, Eigen::Matrix<double,7,1>& resultMatrix)
@@ -363,8 +420,50 @@ CallbackReturn RiemannianMotionPolicy::on_configure(const rclcpp_lifecycle::Stat
 CallbackReturn RiemannianMotionPolicy::on_activate(
   const rclcpp_lifecycle::State& /*previous_state*/) {
   franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_); 
+  //Load parameters from yaml file
+  YAML::Node config = YAML::LoadFile("/home/andri/franka_ros2_ws/src/riemannian_motion_policy/src/config.yaml");
 
-  
+  // Load obstacle avoidance parameters
+  eta_rep = config["obstacle_avoidance"]["eta_rep"].as<double>();
+  mu_rep = config["obstacle_avoidance"]["mu_rep"].as<double>();
+  eta_damp = config["obstacle_avoidance"]["eta_damp"].as<double>();
+  mu_damp = config["obstacle_avoidance"]["mu_damp"].as<double>();
+  epsilon = config["obstacle_avoidance"]["epsilon"].as<double>();
+  weight_obstacle = config["obstacle_avoidance"]["weight_obstacle"].as<double>();
+
+  // Load attractor parameters
+  alpha_min = config["attractor"]["alpha_min"].as<double>();
+  sigma_a = config["attractor"]["sigma_a"].as<double>();
+  sigma_b = config["attractor"]["sigma_b"].as<double>();
+  b = config["attractor"]["b"].as<double>();
+  sigma_o = config["attractor"]["sigma_o"].as<double>();
+  b_axis = config["attractor"]["b_axis"].as<double>();
+  weight_attractor = config["attractor"]["weight_attractor"].as<double>();
+
+  // Load global damping parameters
+  k_damp = config["global_damping"]["k_damp"].as<double>();
+  weight_damping = config["global_damping"]["weight_damping"].as<double>();
+
+  // Load velocity limits parameters
+  k_joint_velocity = config["velocity_limits"]["k_joint_velocity"].as<double>();
+  weight_joint_velocity = config["velocity_limits"]["weight_joint_velocity"].as<double>();
+
+  // Load joint limits parameters
+  kp_joint_limits = config["joint_limits"]["kp_joint_limits"].as<double>();
+  kd_joint_limits = config["joint_limits"]["kd_joint_limits"].as<double>();
+  l_m = config["joint_limits"]["metric_length_scale"].as<double>();
+  epsilon_joint_limits = config["joint_limits"]["epsilon_joint_limits"].as<double>();
+  v_m = config["joint_limits"]["metric_velocity_length_scale"].as<double>();
+  l_p = config["joint_limits"]["accel_exploder_length_scale"].as<double>();
+  accel_eps = config["joint_limits"]["accel_eps"].as<double>();
+  weight_joint_limits = config["joint_limits"]["weight_joint_limits"].as<double>();
+
+  // Load C-space Target parameters
+  kp_c_space_target = config["c_space_target"]["kp_c_space_target"].as<double>();
+  kd_c_space_target = config["c_space_target"]["kd_c_space_target"].as<double>();
+  theta_cspace = config["c_space_target"]["theta"].as<double>();
+  weight_c_space_target = config["c_space_target"]["weight_c_space_target"].as<double>();
+
 
   // Create the subscriber in the on_activate method
   desired_pose_sub = get_node()->create_subscription<geometry_msgs::msg::Pose>(
@@ -586,29 +685,33 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   //d_obs1 = calculateNearestPointOnSphere(position, sphere_center, sphere_radius);
   //d_obs1 = d_obs_prev1 * 0.99 + d_obs1 * 0.01;
   Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
-  x_dd_des = Lambda.inverse()*(-K_RMP * (error) - D_RMP * jacobian * dq_);
+  x_dd_des = Lambda.inverse()*(-K_RMP * (error) - D_RMP* jacobian * dq_);
+  A_attract = calculate_target_attraction(error, jacobian);
+  //A_attract = Eigen::MatrixXd::Zero(6, 6);
   f_obs_tildeEE = calculate_f_obstacle(d_obsEE, Jp_obstacleEE);
-  A_obs_tildeEE = calculate_A_obstacle(d_obsEE, f_obs_tildeEE, 1.0);
+  A_obs_tildeEE = calculate_A_obstacle(d_obsEE, f_obs_tildeEE, 0.5, Jp_obstacleEE);
   f_obs_tilde2 = calculate_f_obstacle(d_obs2, Jp_obstacle2);
-  A_obs_tilde2 = calculate_A_obstacle(d_obs2, f_obs_tilde2, 0.1);
+  A_obs_tilde2 = calculate_A_obstacle(d_obs2, f_obs_tilde2, 0.5, Jp_obstacle2);
   f_obs_tilde3 = calculate_f_obstacle(d_obs3, Jp_obstacle3);
-  A_obs_tilde3 = calculate_A_obstacle(d_obs3, f_obs_tilde3, 1.0);
+  A_obs_tilde3 = calculate_A_obstacle(d_obs3, f_obs_tilde3, 0.5, Jp_obstacle3);
   f_obs_tilde4 = calculate_f_obstacle(d_obs4, Jp_obstacle4);
-  A_obs_tilde4 = calculate_A_obstacle(d_obs4, f_obs_tilde4, 1.0);
+  A_obs_tilde4 = calculate_A_obstacle(d_obs4, f_obs_tilde4, 0.5,  Jp_obstacle4);
   f_obs_tilde5 = calculate_f_obstacle(d_obs5, Jp_obstacle5);
-  A_obs_tilde5 = calculate_A_obstacle(d_obs5, f_obs_tilde5, 1.0);
+  A_obs_tilde5 = calculate_A_obstacle(d_obs5, f_obs_tilde5, 0.5, Jp_obstacle5);
   f_obs_tilde6 = calculate_f_obstacle(d_obs6, Jp_obstacle6);
-  A_obs_tilde6 = calculate_A_obstacle(d_obs6, f_obs_tilde6, 1.0);
+  A_obs_tilde6 = calculate_A_obstacle(d_obs6, f_obs_tilde6, 0.5,   Jp_obstacle6);
   f_obs_tilde7 = calculate_f_obstacle(d_obs7, Jp_obstacle7);
-  A_obs_tilde7 = calculate_A_obstacle(d_obs7, f_obs_tilde7, 1.0);
+  A_obs_tilde7 = calculate_A_obstacle(d_obs7, f_obs_tilde7, 0.5, Jp_obstacle7);
+  auto [f_damping2, A_damping2] = calculate_global_damping(Jp_obstacle2);
+  auto [f_damping3, A_damping3] = calculate_global_damping(Jp_obstacle3);
+  auto [f_damping4, A_damping4] = calculate_global_damping(Jp_obstacle4);
+  auto [f_damping5, A_damping5] = calculate_global_damping(Jp_obstacle5);
+  auto [f_damping6, A_damping6] = calculate_global_damping(Jp_obstacle6);
+  auto [f_damping7, A_damping7] = calculate_global_damping(Jp_obstacle7);
+  auto [f_dampingEE, A_dampingEE] = calculate_global_damping(Jp_obstacleEE);
   rmp_joint_limit_avoidance();
-  jacobian2tilde = jacobian2_obstacle * D_sigma;
-  jacobian3tilde = jacobian3_obstacle * D_sigma;
-  jacobian4tilde = jacobian4_obstacle * D_sigma;
-  jacobian5tilde = jacobian5_obstacle * D_sigma;
-  jacobian6tilde = jacobian6_obstacle * D_sigma;
-  jacobian7tilde = jacobian7_obstacle * D_sigma;
-  jacobianEEtilde = jacobianEE_obstacle * D_sigma;
+  rmp_joint_velocity_limits();
+  rmp_cspacetarget();
   get_ddq();
   
   // Calculate the desired torque
@@ -618,7 +721,7 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   calculate_tau_gravity(coriolis, gravity_force_vector, jacobian);
   //tau_gravity_error = tau_gravity - gravity_force_vector;
 
-  auto tau_d_placeholder = tau_RMP + coriolis + tau_friction; //add nullspace, friction, gravity and coriolis components to desired torque
+  auto tau_d_placeholder = tau_RMP + coriolis; //add nullspace, friction, gravity and coriolis components to desired torque
   tau_d << tau_d_placeholder;
   tau_d << saturateTorqueRate(tau_d, tau_J_d_M);  // Saturate torque rate to avoid discontinuities
   tau_J_d_M = tau_d;
@@ -638,39 +741,20 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   }
   
   if (outcounter % 1000/update_frequency == 0){
-    std::cout << "x_dd_des" << std::endl;
-    std::cout << x_dd_des << std::endl;
-    std::cout << "error_pose" << std::endl;
-    std::cout << error << std::endl;
-    std::cout << "beta_orientation" << std::endl;
-    std::cout << beta_orientation << std::endl;
-    std::cout << "dq_" << std::endl;
-    std::cout << dq_ << std::endl;
-    std::cout << "ddq_" << std::endl;
-    std::cout << ddq_ << std::endl;
-    std::cout << "tau_RMP" << std::endl;
-    std::cout << tau_RMP << std::endl;
-    std::cout << "d_obs2" << std::endl;
-    std::cout << d_obs2 << std::endl;
-    std::cout << "d_obs3" << std::endl;
-    std::cout << d_obs3 << std::endl;
-    std::cout << "d_obs4" << std::endl;
-    std::cout << d_obs4 << std::endl;
-    std::cout << "d_obs5" << std::endl;
-    std::cout << d_obs5 << std::endl;
-    std::cout << "d_obs6" << std::endl;
-    std::cout << d_obs6 << std::endl;
-    std::cout << "d_obs7" << std::endl;
-    std::cout << d_obs7 << std::endl;
-    std::cout << "d_obsEE" << std::endl;
-    std::cout << d_obsEE << std::endl;
-    std::cout << "jointee" << std::endl;
-    std::cout << jointEE << std::endl;
-    std::cout << "jacobian_obstacle" << std::endl;
-    std::cout << jacobianEE_obstacle << std::endl;
-
+    std::cout<<"ddq" << std::endl;
+    std::cout << ddq_<< std::endl;
+    std::cout<<"f_obs_tildeEE" << std::endl;
+    std::cout << f_obs_tildeEE << std::endl;
+    std::cout<<"f_joint_velocity" << std::endl;
+    std::cout << f_joint_velocity << std::endl;
+    std::cout<<"f_dampingEE" << std::endl;
+    std::cout << f_dampingEE << std::endl;
+    //std::cout << "error_pose" << std::endl;
+    //std::cout << error << std::endl;
   }
   outcounter++;
+
+  
   update_stiffness_and_references();
   return controller_interface::return_type::OK;
 }

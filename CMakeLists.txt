@@ -39,6 +39,7 @@ add_library(
         ${PROJECT_NAME}
         SHARED
         src/riemannian_motion_policy.cpp
+        src/config.yaml
         src/user_input_server.cpp
         src/friction_compensation.cpp
         src/gravity_compensation.cpp
