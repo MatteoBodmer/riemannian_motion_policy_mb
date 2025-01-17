@@ -55,13 +55,8 @@
 #include "franka_msgs/msg/errors.hpp"
 #include "franka_msgs/srv/set_load.hpp"
 #include "messages_fr3/srv/set_pose.hpp"
-#include "messages_fr3/msg/tau_gravity.hpp"
-#include "messages_fr3/msg/jacobian.hpp"
-#include "messages_fr3/msg/transformation_matrix.hpp"
-#include "messages_fr3/msg/gravity_force_vector.hpp"
 #include "franka_semantic_components/franka_robot_model.hpp"
 #include "franka_semantic_components/franka_robot_state.hpp"
-#include "messages_fr3/msg/acceleration.hpp"
 #include "messages_fr3/msg/closest_point.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #define IDENTITY Eigen::MatrixXd::Identity(6, 6)
