@@ -91,46 +91,28 @@ Eigen::Vector3d RiemannianMotionPolicy::calculateNearestPointOnSphere(const Eige
 Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::VectorXd& d_obs, const Eigen::MatrixXd& Jp_obstacle) {
   
   Eigen::Matrix<double, 3, 1> nabla_d = Eigen::MatrixXd::Zero(3,1);
-  double alpha_rep;
-  double distance;
+  double alpha_rep; //repulsive potential scalar
+  double alpha_damp; //repulsive damping scalar
+  double distance; //from given point to nearest obstacle point
   Eigen::Matrix<double, 3, 1> f_repulsive = Eigen::MatrixXd::Zero(3,1);
-  double alpha_damp;
   Eigen::Matrix<double, 3, 1> P_obs = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_damping = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_obstacle = Eigen::MatrixXd::Zero(3,1);
-  Eigen::Matrix<double, 3, 1> w = Eigen::MatrixXd::Zero(3,1);
-  Eigen::Matrix<double, 3, 1> v_radial = Eigen::MatrixXd::Zero(3,1);
+  Eigen::Matrix<double, 3, 1> w = Eigen::MatrixXd::Zero(3,1); // task space linear velocity
   
   // Compute nabla_d
   nabla_d = d_obs/(std::max(d_obs.norm(),0.001));
   distance = d_obs.norm();
-  double nabla_x = nabla_d(0);
-  double nabla_y = nabla_d(1);
-  double nabla_z = nabla_d(2);
-  // double v_x = (Jp_obstacle.row(0).dot(dq_)) * (Jp_obstacle.row(0).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_x;
-  // double v_y = (Jp_obstacle.row(1).dot(dq_)) * (Jp_obstacle.row(1).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_y;
-  // double v_z = (Jp_obstacle.row(2).dot(dq_)) * (Jp_obstacle.row(2).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_z;
-  w = Jp_obstacle * dq_; //velocity of point correspoinding to Jp_obstacle in base frame 
-  v_radial = w.dot(nabla_d)/nabla_d.squaredNorm() * nabla_d; //projected velocity on radial direction 
+  w = Jp_obstacle * dq_;
   
-  alpha_rep = eta_rep * std::exp(-distance / mu_rep);
-  //alpha_rep = eta_rep * 1 / (std::pow(distance + mu_rep, 2));
   // Compute f_repulsive
+  alpha_rep = eta_rep * std::exp(-distance / mu_rep);
   f_repulsive = alpha_rep * nabla_d.array();
 
   // Compute alpha_damp
-  
-  /*f_damping(0) = -eta_damp *(1 - (1/(1 + exp(-v_x/0.01))))*v_x/((nabla_x/mu_damp)+epsilon);
-  f_damping(1) = -eta_damp * (1 - (1/(1 + exp(-v_y/0.01))))*v_y/((nabla_y/mu_damp)+epsilon);
-  f_damping(2) = -eta_damp * (1 - (1/(1 + exp(-v_z/0.01))))*v_z/((nabla_z/mu_damp)+epsilon);*/
-
-   // Compute alpha_damp
   alpha_damp = eta_damp / ((distance / mu_damp) + epsilon);
-
-  // Compute dot product for P_obs
-  double dot_product = -(Jp_obstacle * dq_).transpose().dot(nabla_d);
-  P_obs = std::max(0.0, dot_product) * nabla_d * nabla_d.transpose() * (Jp_obstacle * dq_);
-
+  // stretching matrix (only consider velocities when moving towards the obstacle)
+  P_obs = std::max(0.0, -w.transpose().dot(nabla_d)) * nabla_d * nabla_d.transpose() * w;
   // Compute f_damping
   f_damping = -alpha_damp * P_obs.array();
   
@@ -147,8 +129,8 @@ Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::Vector
 Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::VectorXd& d_obs,
                                                              const Eigen::VectorXd& f_obstacle_tilde, double r_a,
                                                              const Eigen::MatrixXd& Jp_obstacle) {
-  double alpha_a = 1.0;
-  double beta_x = 1.0;
+  double alpha_a = 1.0; // tuning paramter for directional stretching
+  double beta_x = 1.0; // tuning parameter wight for directional stretching vs Identity
   
   Eigen::Matrix3d H_obs = Eigen::Matrix3d::Identity();
   Eigen::Matrix3d A_stretch = Eigen::Matrix3d::Identity();
@@ -157,29 +139,25 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
   Eigen::Matrix3d A_obs = Eigen::Matrix3d::Zero();
   Eigen::MatrixXd A_obs_tilde = Eigen::MatrixXd::Zero(6, 6);
   Eigen::Matrix3d identity_3 = Eigen::Matrix3d::Identity();
-
-  f_obstacle = f_obstacle_tilde.topRows(3);
   Eigen::Matrix<double, 3, 1> nabla_d = Eigen::MatrixXd::Zero(3,1);
+  Eigen::Matrix<double, 3, 1> w = Eigen::MatrixXd::Zero(3,1); // task space linear velocity
+  // define interpolation polynomial (omega)
+  double c_1 = (-2.0 / r_a);
+  double c_2 = 1.0 / std::pow(r_a, 2);
+  double w_r;
+
+  // define linear components of repulsion force
+  f_obstacle = f_obstacle_tilde.topRows(3);
+  // define repulsion direction and linear velocity
   nabla_d = d_obs/(std::max(d_obs.norm(), 0.001));
-  double distance = d_obs.norm();
-  double nabla_x = nabla_d(0);
-  double nabla_y = nabla_d(1);
-  double nabla_z = nabla_d(2);
-  double v_x = (Jp_obstacle.row(0).dot(dq_)) * (Jp_obstacle.row(0).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_x;
-  double v_y = (Jp_obstacle.row(1).dot(dq_)) * (Jp_obstacle.row(1).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_y;
-  double v_z = (Jp_obstacle.row(2).dot(dq_)) * (Jp_obstacle.row(2).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_z;
+  distance = d_obs.norm();
+  w = Jp_obstacle * dq_;
 
   // Check for valid values
   if (!d_obs.allFinite() || !f_obstacle.allFinite()) {
       throw std::runtime_error("d_obs or f_obstacle contains invalid values (NaN or inf).");
   }
-
-  double c_1 = (-2.0 / r_a);
-  double c_2 = 1.0 / std::pow(r_a, 2);
-  double w_r;
-
   if (d_obs.norm() < r_a) {
-
     w_r = c_2 * d_obs.norm() * d_obs.norm() + c_1 * d_obs.norm() + 1.0;
 
   }
@@ -187,17 +165,12 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
     w_r = 0.0;
   }
 
-  double h_v = f_obstacle.norm() + log(1.0 + exp(-2 * alpha_a * f_obstacle.norm())) / alpha_a;
-  xsi = f_obstacle / (h_v);
+  double h_v = f_obstacle.norm() + 1/alpha_a * log(1.0 + exp(-2 * alpha_a * f_obstacle.norm()));
+  xi = f_obstacle / (h_v);
+  A_stretch = xi * xi.transpose();
 
-  A_stretch = xsi * xsi.transpose();
   H_obs = beta_x * A_stretch + (1.0 - beta_x) * identity_3;
   A_obs = w_r * H_obs ;
-
-  /*A_obs(0,0) = (1 - (1/(1 + exp(-v_x/0.01))))*w_r*1/((nabla_x/0.02)+0.001);
-  A_obs(1,1) = (1 - (1/(1 + exp(-v_y/0.01))))*w_r*1/((nabla_y/0.02)+0.001);
-  A_obs(2,2) = (1 - (1/(1 + exp(-v_z/0.01))))*w_r*1/((nabla_z/0.02)+0.001);*/
-  
   A_obs_tilde.topLeftCorner(3, 3) = A_obs;
 
   return weight_obstacle * A_obs_tilde;
@@ -319,11 +292,7 @@ void RiemannianMotionPolicy::get_ddq(){
   Eigen::MatrixXd Hand_b = jacobianEE_obstacle.transpose() * A_obs_tildeEE * f_obs_tildeEE + jacobianEE_obstacle.transpose() * A_dampingEE * f_dampingEE;
   Eigen::MatrixXd A_total = jacobian.transpose()*A_attract *jacobian + Hand_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target;
   Eigen::MatrixXd A_total_inv;
-    
-  A_total_inv = A_total.inverse();
-  
-  
-  
+  pseudoInverse(A_total, A_total_inv); // get pseudoinverse for pullback 
   ddq_ =  A_total_inv* (jacobian.transpose() * A_attract * x_dd_des + Hand_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b 
                           + A_joint_limits_upper * f_joint_limits_upper + A_joint_limits_lower * f_joint_limits_lower
                           + A_joint_velocity * f_joint_velocity + A_c_space_target * f_c_space_target);
