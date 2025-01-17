@@ -98,6 +98,8 @@ Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::Vector
   Eigen::Matrix<double, 3, 1> P_obs = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_damping = Eigen::MatrixXd::Zero(3,1);
   Eigen::Matrix<double, 3, 1> f_obstacle = Eigen::MatrixXd::Zero(3,1);
+  Eigen::Matrix<double, 3, 1> w = Eigen::MatrixXd::Zero(3,1);
+  Eigen::Matrix<double, 3, 1> v_radial = Eigen::MatrixXd::Zero(3,1);
   
   // Compute nabla_d
   nabla_d = d_obs/(std::max(d_obs.norm(),0.001));
@@ -105,10 +107,11 @@ Eigen::VectorXd RiemannianMotionPolicy::calculate_f_obstacle(const Eigen::Vector
   double nabla_x = nabla_d(0);
   double nabla_y = nabla_d(1);
   double nabla_z = nabla_d(2);
-  double v_x = (Jp_obstacle.row(0).dot(dq_)) * (Jp_obstacle.row(0).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_x;
-  double v_y = (Jp_obstacle.row(1).dot(dq_)) * (Jp_obstacle.row(1).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_y;
-  double v_z = (Jp_obstacle.row(2).dot(dq_)) * (Jp_obstacle.row(2).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_z;
-
+  // double v_x = (Jp_obstacle.row(0).dot(dq_)) * (Jp_obstacle.row(0).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_x;
+  // double v_y = (Jp_obstacle.row(1).dot(dq_)) * (Jp_obstacle.row(1).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_y;
+  // double v_z = (Jp_obstacle.row(2).dot(dq_)) * (Jp_obstacle.row(2).dot(dq_))/((Jp_obstacle*dq_).norm() + 0.001) * nabla_z;
+  w = Jp_obstacle * dq_; //velocity of point correspoinding to Jp_obstacle in base frame 
+  v_radial = w.dot(nabla_d)/nabla_d.squaredNorm() * nabla_d; //projected velocity on radial direction 
   
   alpha_rep = eta_rep * std::exp(-distance / mu_rep);
   //alpha_rep = eta_rep * 1 / (std::pow(distance + mu_rep, 2));
@@ -199,24 +202,24 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
 
   return weight_obstacle * A_obs_tilde;
 }
+
 //RMP for target attraction/axis
 Eigen::MatrixXd RiemannianMotionPolicy::calculate_target_attraction(const Eigen::VectorXd& error, const Eigen::MatrixXd& jacobian) {
+  //declarations
   Eigen::VectorXd f_attract = Eigen::VectorXd::Zero(6);  
   Eigen::MatrixXd A_attract = Eigen::MatrixXd::Zero(6, 6);
   Eigen::MatrixXd j_translational = jacobian.topRows(3);
   Eigen::MatrixXd j_rotational = jacobian.bottomRows(3);
   Eigen::Vector3d error_position = error.head(3);
   Eigen::Vector3d error_orientation = error.tail(3);
-  
+  Eigen::Matrix3d M_far = Eigen::Matrix3d::Zero();
+  Eigen::Matrix3d M_near = Eigen::Matrix3d::Zero();
   //target metric
   Eigen::Matrix3d A_position = Eigen::Matrix3d::Zero();
-  
-  double alpha = (1 - alpha_min) *exp((-1 * std::pow(error_position.norm(), 2)) / (2*sigma_a)) + alpha_min;
-  double beta = exp((-1 * std::pow(error_position.norm(), 2)) / (2*sigma_b));
-  Eigen::Matrix3d M_near = Eigen::Matrix3d::Zero();
+  double alpha = (1 - alpha_min) *exp((-1 * error_position.squaredNorm()) / (2*sigma_a)) + alpha_min;
+  double beta = exp((-1 * error_position.squaredNorm()) / (2*sigma_b));
   M_near = Eigen::Matrix3d::Identity();
-  Eigen::Matrix3d M_far = Eigen::Matrix3d::Zero();
-  M_far = 0/(std::pow(error_position.norm(), 2)) * error_position * error_position.transpose();
+  M_far = 0/(error_position.squaredNorm()) * error_position * error_position.transpose();
   A_position = (beta * b + (1 - beta)) * (alpha * M_near + (1 - alpha) * M_far);
   A_attract.topLeftCorner(3, 3) = A_position;
   
@@ -672,16 +675,9 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   Eigen::Quaterniond error_quaternion(orientation.inverse() * orientation_d_);
   error.tail(3) << error_quaternion.x(), error_quaternion.y(), error_quaternion.z();
   error.tail(3) << -transform.rotation() * error.tail(3);
-
   error.head(3) << position - position_d_;
 
-  //Calculate friction forces
-  N = (Eigen::MatrixXd::Identity(7, 7) - jacobian_pinv * jacobian);
-  Eigen::VectorXd  tau_nullspace(7), tau_d(7);
-  pseudoInverse(jacobian.transpose(), jacobian_transpose_pinv);
 
-  tau_nullspace <<  N * (nullspace_stiffness_ * config_control * (q_d_nullspace_ - q_) - //if config_control = true we control the whole robot configuration
-                    (2.0 * sqrt(nullspace_stiffness_)) * dq_);  // if config control ) false we don't care about the joint position
   //d_obs1 = calculateNearestPointOnSphere(position, sphere_center, sphere_radius);
   //d_obs1 = d_obs_prev1 * 0.99 + d_obs1 * 0.01;
   Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
