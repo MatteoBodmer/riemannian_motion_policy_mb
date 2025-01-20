@@ -241,23 +241,9 @@ public:
     Eigen::Vector3d d_obs5 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
     Eigen::Vector3d d_obs6 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
     Eigen::Vector3d d_obs7 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
+    Eigen::Vector3d d_obshand = (Eigen::VectorXd(3) << 100, 100, 100).finished();
     Eigen::Vector3d d_obsEE = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    // Coordinates of the closest point to the obstacle
-    Eigen::Vector3d closest_point2 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d closest_point3 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d closest_point4 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d closest_point5 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d closest_point6 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d closest_point7 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d closest_pointEE = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    // Coordinates of joints
-    Eigen::Vector3d joint2 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d joint3 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d joint4 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d joint5 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d joint6 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d joint7 = (Eigen::VectorXd(3) << 1, 1, 1).finished();
-    Eigen::Vector3d jointEE = (Eigen::VectorXd(3) << 1, 1, 1).finished();
+    
 
     Eigen::Matrix<double, 6, 7> jacobian2 = Eigen::MatrixXd::Zero(6,7);
     
@@ -270,6 +256,8 @@ public:
     Eigen::Matrix<double, 6, 7> jacobian6 = Eigen::MatrixXd::Zero(6,7);
     
     Eigen::Matrix<double, 6, 7> jacobian7 = Eigen::MatrixXd::Zero(6,7);
+
+    Eigen::Matrix<double, 6, 7> jacobianhand = Eigen::MatrixXd::Zero(6,7);
    
     Eigen::Matrix<double, 6, 7> jacobianEE = Eigen::MatrixXd::Zero(6,7);
    
@@ -279,6 +267,7 @@ public:
     std::array<double, 42> jacobian_array5;
     std::array<double, 42> jacobian_array6;
     std::array<double, 42> jacobian_array7;
+    std::array<double, 42> jacobian_arrayhand;
     std::array<double, 42> jacobian_arrayEE;
     Eigen::Matrix<double, 6, 7> jacobian2_obstacle = Eigen::MatrixXd::Zero(6,7);
     Eigen::Matrix<double, 6, 7> jacobian3_obstacle = Eigen::MatrixXd::Zero(6,7);
@@ -286,6 +275,7 @@ public:
     Eigen::Matrix<double, 6, 7> jacobian5_obstacle = Eigen::MatrixXd::Zero(6,7);
     Eigen::Matrix<double, 6, 7> jacobian6_obstacle = Eigen::MatrixXd::Zero(6,7);
     Eigen::Matrix<double, 6, 7> jacobian7_obstacle = Eigen::MatrixXd::Zero(6,7);
+    Eigen::Matrix<double, 6, 7> jacobianhand_obstacle = Eigen::MatrixXd::Zero(6,7);
     Eigen::Matrix<double, 6, 7> jacobianEE_obstacle = Eigen::MatrixXd::Zero(6,7);
     Eigen::Matrix<double, 3, 7> Jp_obstacle2;
     Eigen::Matrix<double, 3, 7> Jp_obstacle3 ;
@@ -293,6 +283,7 @@ public:
     Eigen::Matrix<double, 3, 7> Jp_obstacle5;
     Eigen::Matrix<double, 3, 7> Jp_obstacle6;
     Eigen::Matrix<double, 3, 7> Jp_obstacle7;
+    Eigen::Matrix<double, 3, 7> Jp_obstaclehand;
     Eigen::Matrix<double, 3, 7> Jp_obstacleEE ;
     
 
@@ -308,6 +299,8 @@ public:
     Eigen::Matrix<double, 6, 6> A_obs_tilde6 = Eigen::MatrixXd::Zero(6,6);
     Eigen::VectorXd f_obs_tilde7 = Eigen::VectorXd::Zero(6); 
     Eigen::Matrix<double, 6, 6> A_obs_tilde7 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_obs_tildehand = Eigen::VectorXd::Zero(6);
+    Eigen::Matrix<double, 6, 6> A_obs_tildehand = Eigen::MatrixXd::Zero(6,6);
     Eigen::VectorXd f_obs_tildeEE = Eigen::VectorXd::Zero(6); 
     Eigen::Matrix<double, 6, 6> A_obs_tildeEE = Eigen::MatrixXd::Zero(6,6);
 
@@ -323,6 +316,8 @@ public:
     Eigen::Matrix<double, 6, 6> A_damping6 = Eigen::MatrixXd::Zero(6,6);
     Eigen::VectorXd f_damping7 = Eigen::VectorXd::Zero(6);
     Eigen::Matrix<double, 6, 6> A_damping7 = Eigen::MatrixXd::Zero(6,6);
+    Eigen::VectorXd f_dampinghand = Eigen::VectorXd::Zero(6);
+    Eigen::Matrix<double, 6, 6> A_dampinghand = Eigen::MatrixXd::Zero(6,6);
     Eigen::VectorXd f_dampingEE = Eigen::VectorXd::Zero(6);
     Eigen::Matrix<double, 6, 6> A_dampingEE = Eigen::MatrixXd::Zero(6,6);
 

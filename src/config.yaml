@@ -1,7 +1,7 @@
 # RMP Obstacle Avoidance
 obstacle_avoidance:
   eta_rep: 20.0
-  mu_rep: 0.2
+  mu_rep: 0.01
   eta_damp: 30.0
   mu_damp: 0.04
   epsilon: 0.001
@@ -9,12 +9,12 @@ obstacle_avoidance:
 
 # RMP Attractor
 attractor:
-  alpha_min: 0.01
-  sigma_a: 0.01
-  sigma_b: 0.01
+  alpha_min: 0.001
+  sigma_a: 0.005
+  sigma_b: 0.008
   b: 20.0
-  sigma_o: 0.01
-  b_axis: 20.0
+  sigma_o: 0.008
+  b_axis: 2000.0
   weight_attractor: 1.0
 
 # RMP Global Damping
@@ -43,4 +43,4 @@ c_space_target:
   kp_c_space_target: 1.0 #k_p
   kd_c_space_target: 2.0 #k_d
   theta: 0.5 #theta
-  weight_c_space_target: 0.1
+  weight_c_space_target: 0.02

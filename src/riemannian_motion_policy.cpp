@@ -229,7 +229,7 @@ void RiemannianMotionPolicy::rmp_joint_limit_avoidance(){
     dx_lower(i) = dq_(i) / (q_upper_limit(i) - q_lower_limit(i));
 
     x_upper(i) = (q_upper_limit(i) - q_(i)) / (q_upper_limit(i) - q_lower_limit(i));
-    dx_upper(i) = dq_(i) / (q_upper_limit(i) - q_lower_limit(i));
+    dx_upper(i) = -dq_(i) / (q_upper_limit(i) - q_lower_limit(i));
 
     f_joint_limits_lower(i) = kp_joint_limits/((std::pow(x_lower(i),2)/std::pow(l_p,2)) + accel_eps)  - kd_joint_limits * dx_lower(i);
     f_joint_limits_upper(i) = kp_joint_limits/((std::pow(x_upper(i),2)/std::pow(l_p,2)) + accel_eps)  - kd_joint_limits * dx_upper(i);
@@ -281,18 +281,20 @@ void RiemannianMotionPolicy::get_ddq(){
   Eigen::MatrixXd Link5_a = jacobian5_obstacle.transpose() * A_obs_tilde5 * jacobian5_obstacle + jacobian5_obstacle.transpose() * A_damping5 * jacobian5_obstacle;
   Eigen::MatrixXd Link6_a = jacobian6_obstacle.transpose() * A_obs_tilde6 * jacobian6_obstacle + jacobian6_obstacle.transpose() * A_damping6 * jacobian6_obstacle;
   Eigen::MatrixXd Link7_a = jacobian7_obstacle.transpose() * A_obs_tilde7 * jacobian7_obstacle + jacobian7_obstacle.transpose() * A_damping7 * jacobian7_obstacle;
-  Eigen::MatrixXd Hand_a = jacobianEE_obstacle.transpose() * A_obs_tildeEE* jacobianEE_obstacle + jacobianEE_obstacle.transpose() * A_dampingEE * jacobianEE_obstacle;
+  Eigen::MatrixXd Hand_a = jacobianhand_obstacle.transpose() * A_obs_tildehand * jacobianhand_obstacle + jacobianhand_obstacle.transpose() * A_dampinghand * jacobianhand_obstacle;
+  Eigen::MatrixXd EE_a = jacobianEE_obstacle.transpose() * A_obs_tildeEE* jacobianEE_obstacle + jacobianEE_obstacle.transpose() * A_dampingEE * jacobianEE_obstacle;
   Eigen::MatrixXd Link2_b = jacobian2_obstacle.transpose() * A_obs_tilde2 * f_obs_tilde2 + jacobian2_obstacle.transpose() * A_damping2 * f_damping2;
   Eigen::MatrixXd Link3_b = jacobian3_obstacle.transpose() * A_obs_tilde3 * f_obs_tilde3 + jacobian3_obstacle.transpose() * A_damping3 * f_damping3; 
   Eigen::MatrixXd Link4_b = jacobian4_obstacle.transpose() * A_obs_tilde4 * f_obs_tilde4 + jacobian4_obstacle.transpose() * A_damping4 * f_damping4;
   Eigen::MatrixXd Link5_b = jacobian5_obstacle.transpose() * A_obs_tilde5 * f_obs_tilde5 + jacobian5_obstacle.transpose() * A_damping5 * f_damping5;
   Eigen::MatrixXd Link6_b = jacobian6_obstacle.transpose() * A_obs_tilde6 * f_obs_tilde6 + jacobian6_obstacle.transpose() * A_damping6 * f_damping6;
   Eigen::MatrixXd Link7_b = jacobian7_obstacle.transpose() * A_obs_tilde7 * f_obs_tilde7 + jacobian7_obstacle.transpose() * A_damping7 * f_damping7;
-  Eigen::MatrixXd Hand_b = jacobianEE_obstacle.transpose() * A_obs_tildeEE * f_obs_tildeEE + jacobianEE_obstacle.transpose() * A_dampingEE * f_dampingEE;
-  Eigen::MatrixXd A_total = jacobian.transpose()*A_attract *jacobian + Hand_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target;
+  Eigen::MatrixXd Hand_b = jacobianhand_obstacle.transpose() * A_obs_tildehand * f_obs_tildehand + jacobianhand_obstacle.transpose() * A_dampinghand * f_dampinghand;
+  Eigen::MatrixXd EE_b = jacobianEE_obstacle.transpose() * A_obs_tildeEE * f_obs_tildeEE + jacobianEE_obstacle.transpose() * A_dampingEE * f_dampingEE;
+  Eigen::MatrixXd A_total = jacobian.transpose()*A_attract *jacobian + Hand_a +EE_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target;
   Eigen::MatrixXd A_total_inv;
   pseudoInverse(A_total, A_total_inv); // get pseudoinverse for pullback 
-  ddq_ =  A_total_inv* (jacobian.transpose() * A_attract * x_dd_des + Hand_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b 
+  ddq_ =  A_total_inv* (jacobian.transpose() * A_attract * x_dd_des + Hand_b +EE_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b 
                           + A_joint_limits_upper * f_joint_limits_upper + A_joint_limits_lower * f_joint_limits_lower
                           + A_joint_velocity * f_joint_velocity + A_c_space_target * f_c_space_target);
 }
@@ -505,15 +507,8 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     d_obs5 << msg->frame5x, msg->frame5y, msg->frame5z;
     d_obs6 << msg->frame6x, msg->frame6y, msg->frame6z;
     d_obs7 << msg->frame7x, msg->frame7y, msg->frame7z;
+    d_obshand << msg->framehandx, msg->framehandy, msg->framehandz;
     d_obsEE << msg->frameeex, msg->frameeey, msg->frameeez;
-    // Handle the coordinates of the closest point
-    closest_point2 << msg->point2x, msg->point2y, msg->point2z;
-    closest_point3 << msg->point3x, msg->point3y, msg->point3z;
-    closest_point4 << msg->point4x, msg->point4y, msg->point4z;
-    closest_point5 << msg->point5x, msg->point5y, msg->point5z;
-    closest_point6 << msg->point6x, msg->point6y, msg->point6z;
-    closest_point7 << msg->point7x, msg->point7y, msg->point7z;
-    closest_pointEE << msg->pointeex, msg->pointeey, msg->pointeez;
     // Handle the Jacobian of the closest point
     jacobian_array2 = msg->jacobian2;
     jacobian_array3 = msg->jacobian3;
@@ -521,6 +516,7 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     jacobian_array5 = msg->jacobian5;
     jacobian_array6 = msg->jacobian6;
     jacobian_array7 = msg->jacobian7;
+    jacobian_arrayhand = msg->jacobianhand;
     jacobian_arrayEE = msg->jacobianee;
     //reshape to matrix (6x7) column major
     Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian2obstacle(jacobian_array2.data());
@@ -529,6 +525,7 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian5obstacle(jacobian_array5.data());
     Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian6obstacle(jacobian_array6.data());
     Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian7obstacle(jacobian_array7.data());
+    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobianhandobstacle(jacobian_arrayhand.data());
     Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobianEEobstacle(jacobian_arrayEE.data());
     //assign to class variables
     jacobian2_obstacle = jacobian2obstacle;
@@ -537,6 +534,7 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     jacobian5_obstacle = jacobian5obstacle;
     jacobian6_obstacle = jacobian6obstacle;
     jacobian7_obstacle = jacobian7obstacle;
+    jacobianhand_obstacle = jacobianhandobstacle;
     jacobianEE_obstacle = jacobianEEobstacle;
 
 }
@@ -582,38 +580,14 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   std::array<double, 49> mass = franka_robot_model_->getMassMatrix();
   std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
   std::array<double, 7> gravity_force_vector_array = franka_robot_model_->getGravityForceVector();
-  //get pose matrix of each joint
-  std::array<double, 16> pose2 = franka_robot_model_->getPoseMatrix(franka::Frame::kJoint2);
-  std::array<double, 16> pose3 = franka_robot_model_->getPoseMatrix(franka::Frame::kJoint3);
-  std::array<double, 16> pose4 = franka_robot_model_->getPoseMatrix(franka::Frame::kJoint4);
-  std::array<double, 16> pose5 = franka_robot_model_->getPoseMatrix(franka::Frame::kJoint5);
-  std::array<double, 16> pose6 = franka_robot_model_->getPoseMatrix(franka::Frame::kJoint6);
-  std::array<double, 16> pose7 = franka_robot_model_->getPoseMatrix(franka::Frame::kJoint7);
-  std::array<double, 16> poseEE = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
-  Eigen::Affine3d transform2(Eigen::Matrix4d::Map(pose2.data()));
-  Eigen::Affine3d transform3(Eigen::Matrix4d::Map(pose3.data()));
-  Eigen::Affine3d transform4(Eigen::Matrix4d::Map(pose4.data()));
-  Eigen::Affine3d transform5(Eigen::Matrix4d::Map(pose5.data()));
-  Eigen::Affine3d transform6(Eigen::Matrix4d::Map(pose6.data()));
-  Eigen::Affine3d transform7(Eigen::Matrix4d::Map(pose7.data()));
-  Eigen::Affine3d transformEE(Eigen::Matrix4d::Map(poseEE.data()));
-  //get position of each joint
-  joint2 = transform2.translation();
-  joint3 = transform3.translation();
-  joint4 = transform4.translation();
-  joint5 = transform5.translation();
-  joint6 = transform6.translation();
-  joint7 = transform7.translation();
-  jointEE = transformEE.translation();
-  //jacobians
   
-
   Jp_obstacle2 = jacobian2_obstacle.topRows(3);
   Jp_obstacle3 = jacobian3_obstacle.topRows(3);
   Jp_obstacle4 = jacobian4_obstacle.topRows(3);
   Jp_obstacle5 = jacobian5_obstacle.topRows(3);
   Jp_obstacle6 = jacobian6_obstacle.topRows(3);
   Jp_obstacle7 = jacobian7_obstacle.topRows(3);
+  Jp_obstaclehand = jacobianhand_obstacle.topRows(3);
   Jp_obstacleEE = jacobianEE_obstacle.topRows(3);
 
   jacobian_array =  franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
@@ -666,12 +640,15 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   A_obs_tilde6 = calculate_A_obstacle(d_obs6, f_obs_tilde6, 0.5,   Jp_obstacle6);
   f_obs_tilde7 = calculate_f_obstacle(d_obs7, Jp_obstacle7);
   A_obs_tilde7 = calculate_A_obstacle(d_obs7, f_obs_tilde7, 0.5, Jp_obstacle7);
+  f_obs_tildehand = calculate_f_obstacle(d_obshand, Jp_obstaclehand);
+  A_obs_tildehand = calculate_A_obstacle(d_obshand, f_obs_tildehand, 0.5, Jp_obstaclehand);
   auto [f_damping2, A_damping2] = calculate_global_damping(Jp_obstacle2);
   auto [f_damping3, A_damping3] = calculate_global_damping(Jp_obstacle3);
   auto [f_damping4, A_damping4] = calculate_global_damping(Jp_obstacle4);
   auto [f_damping5, A_damping5] = calculate_global_damping(Jp_obstacle5);
   auto [f_damping6, A_damping6] = calculate_global_damping(Jp_obstacle6);
   auto [f_damping7, A_damping7] = calculate_global_damping(Jp_obstacle7);
+  auto [f_dampinghand, A_dampinghand] = calculate_global_damping(Jp_obstaclehand);
   auto [f_dampingEE, A_dampingEE] = calculate_global_damping(Jp_obstacleEE);
   rmp_joint_limit_avoidance();
   rmp_joint_velocity_limits();
@@ -681,7 +658,7 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   // Calculate the desired torque
   tau_RMP = M * ddq_;
   // Calculate friction torques
-  calculate_tau_friction();
+  //calculate_tau_friction();
   calculate_tau_gravity(coriolis, gravity_force_vector, jacobian);
   //tau_gravity_error = tau_gravity - gravity_force_vector;
 
