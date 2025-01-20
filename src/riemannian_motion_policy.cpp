@@ -134,7 +134,7 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
   
   Eigen::Matrix3d H_obs = Eigen::Matrix3d::Identity();
   Eigen::Matrix3d A_stretch = Eigen::Matrix3d::Identity();
-  Eigen::Vector3d xsi = Eigen::Vector3d::Zero();
+  Eigen::Vector3d xi = Eigen::Vector3d::Zero();
   Eigen::Vector3d f_obstacle = Eigen::Vector3d::Zero();
   Eigen::Matrix3d A_obs = Eigen::Matrix3d::Zero();
   Eigen::MatrixXd A_obs_tilde = Eigen::MatrixXd::Zero(6, 6);
@@ -150,7 +150,6 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_A_obstacle(const Eigen::Vector
   f_obstacle = f_obstacle_tilde.topRows(3);
   // define repulsion direction and linear velocity
   nabla_d = d_obs/(std::max(d_obs.norm(), 0.001));
-  distance = d_obs.norm();
   w = Jp_obstacle * dq_;
 
   // Check for valid values
@@ -650,7 +649,7 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   //d_obs1 = calculateNearestPointOnSphere(position, sphere_center, sphere_radius);
   //d_obs1 = d_obs_prev1 * 0.99 + d_obs1 * 0.01;
   Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
-  x_dd_des = Lambda.inverse()*(-K_RMP * (error) - D_RMP* jacobian * dq_);
+  x_dd_des = (-K_RMP * (error) - D_RMP* jacobian * dq_);
   A_attract = calculate_target_attraction(error, jacobian);
   //A_attract = Eigen::MatrixXd::Zero(6, 6);
   f_obs_tildeEE = calculate_f_obstacle(d_obsEE, Jp_obstacleEE);
