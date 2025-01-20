@@ -159,6 +159,7 @@ public:
     Eigen::Matrix<double, 7, 1> tau_impedance_filtered = Eigen::MatrixXd::Zero(7,1); // impedance torque filtered
     Eigen::Matrix<double, 7, 1> tau_friction;
     Eigen::Matrix<double, 7, 1> tau_threshold;  //Creating and filtering a "fake" tau_impedance with own weights, optimized for friction compensation
+    Eigen::Matrix<double, 7, 1> tau_d; //final control torque
     bool friction_ = true; // set if friciton compensation should be turned on
     Eigen::MatrixXd N; // nullspace projection matrix
     // friction compensation observer
