@@ -243,40 +243,53 @@ void RiemannianMotionPolicy::rmp_cspacetarget(){
       f_c_space_target(i) = kp_c_space_target(i,i) * theta_cspace * diff/abs_diff - kd_c_space_target(i,i) * dq_(i);
     }
   }
-    Eigen::Vector3d f_obs_head = f_obs_tildeEE.head<3>(); // Convert to fixed-size 3D vector
-    Eigen::Vector3d x_dd_d_head = x_dd_des.head<3>();
-    double gain = std::abs(x_dd_d_head.dot(f_obs_head) / (x_dd_d_head.norm() * f_obs_head.norm() + 0.001));
+    Eigen::Vector3d f_obs_head =  f_obs_tildeEE.topRows(3); // dimension 3 x n
+    Eigen::Vector3d x_dd_d_head = x_dd_des.head<3>(); // dimension 3 x 1
+    Eigen::VectorXd dotProducts = f_obs_head.transpose() * x_dd_d_head;
+
+    // Find the index of the maximum dot product.
+    int maxIndex;
+    dotProducts.maxCoeff(&maxIndex);
+
+    // Extract the column that has the highest dot product.
+    Eigen::Vector3d bestColumn = f_obs_head.col(maxIndex);
+    double gain = std::abs(x_dd_d_head.dot(bestColumn) / (x_dd_d_head.norm() * bestColumn.norm() + 0.001));
 
     A_c_space_target = weight_c_space_target * gain  * Eigen::MatrixXd::Identity(7,7) ;
 }
 //get global joint acceleration for torque calculation
 void RiemannianMotionPolicy::get_ddq(){
 
-
   Eigen::MatrixXd I_77 = Eigen::MatrixXd::Identity(7, 7);
   Eigen::MatrixXd I_66 = Eigen::MatrixXd::Identity(6, 6);
-  Eigen::MatrixXd Link2_a = jacobian2_obstacle.transpose() * A_obs_tilde2 * jacobian2_obstacle + jacobian2_obstacle.transpose() * A_damping2 * jacobian2_obstacle;
-  Eigen::MatrixXd Link3_a = jacobian3_obstacle.transpose() * A_obs_tilde3 * jacobian3_obstacle + jacobian3_obstacle.transpose() * A_damping3 * jacobian3_obstacle;
-  Eigen::MatrixXd Link4_a = jacobian4_obstacle.transpose() * A_obs_tilde4 * jacobian4_obstacle + jacobian4_obstacle.transpose() * A_damping4 * jacobian4_obstacle;
-  Eigen::MatrixXd Link5_a = jacobian5_obstacle.transpose() * A_obs_tilde5 * jacobian5_obstacle + jacobian5_obstacle.transpose() * A_damping5 * jacobian5_obstacle;
-  Eigen::MatrixXd Link6_a = jacobian6_obstacle.transpose() * A_obs_tilde6 * jacobian6_obstacle + jacobian6_obstacle.transpose() * A_damping6 * jacobian6_obstacle;
-  Eigen::MatrixXd Link7_a = jacobian7_obstacle.transpose() * A_obs_tilde7 * jacobian7_obstacle + jacobian7_obstacle.transpose() * A_damping7 * jacobian7_obstacle;
-  Eigen::MatrixXd Hand_a = jacobianhand_obstacle.transpose() * A_obs_tildehand * jacobianhand_obstacle + jacobianhand_obstacle.transpose() * A_dampinghand * jacobianhand_obstacle;
-  Eigen::MatrixXd EE_a = jacobianEE_obstacle.transpose() * A_obs_tildeEE* jacobianEE_obstacle + jacobianEE_obstacle.transpose() * A_dampingEE * jacobianEE_obstacle;
-  Eigen::MatrixXd Link2_b = jacobian2_obstacle.transpose() * A_obs_tilde2 * f_obs_tilde2 + jacobian2_obstacle.transpose() * A_damping2 * f_damping2;
-  Eigen::MatrixXd Link3_b = jacobian3_obstacle.transpose() * A_obs_tilde3 * f_obs_tilde3 + jacobian3_obstacle.transpose() * A_damping3 * f_damping3; 
-  Eigen::MatrixXd Link4_b = jacobian4_obstacle.transpose() * A_obs_tilde4 * f_obs_tilde4 + jacobian4_obstacle.transpose() * A_damping4 * f_damping4;
-  Eigen::MatrixXd Link5_b = jacobian5_obstacle.transpose() * A_obs_tilde5 * f_obs_tilde5 + jacobian5_obstacle.transpose() * A_damping5 * f_damping5;
-  Eigen::MatrixXd Link6_b = jacobian6_obstacle.transpose() * A_obs_tilde6 * f_obs_tilde6 + jacobian6_obstacle.transpose() * A_damping6 * f_damping6;
-  Eigen::MatrixXd Link7_b = jacobian7_obstacle.transpose() * A_obs_tilde7 * f_obs_tilde7 + jacobian7_obstacle.transpose() * A_damping7 * f_damping7;
-  Eigen::MatrixXd Hand_b = jacobianhand_obstacle.transpose() * A_obs_tildehand * f_obs_tildehand + jacobianhand_obstacle.transpose() * A_dampinghand * f_dampinghand;
-  Eigen::MatrixXd EE_b = jacobianEE_obstacle.transpose() * A_obs_tildeEE * f_obs_tildeEE + jacobianEE_obstacle.transpose() * A_dampingEE * f_dampingEE;
-  Eigen::MatrixXd A_total = jacobian.transpose()*A_attract *jacobian + Hand_a + EE_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target;
-  Eigen::MatrixXd A_total_inv;
+  // get A_total and f_total for obstacle
+  Eigen::MatrixXd A_total = Eigen::MatrixXd::Zero(7, 7);
+  Eigen::MatrixXd A_total_inv = Eigen::MatrixXd::Zero(7, 7);
+  Eigen::VectorXd f_total = Eigen::VectorXd::Zero(7);
+  for (int i = 0; i < number_obstacles; i++) {
+    A_total += jacobian2_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde2.block(0, 6 * i, 6, 6) * jacobian2_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobian2_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde2.block(0, 6 * i, 6, 6) * f_obs_tilde2.col(i);
+    A_total += jacobian3_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde3.block(0, 6 * i, 6, 6) * jacobian3_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobian3_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde3.block(0, 6 * i, 6, 6) * f_obs_tilde3.col(i);
+    A_total += jacobian4_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde4.block(0, 6 * i, 6, 6) * jacobian4_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobian4_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde4.block(0, 6 * i, 6, 6) * f_obs_tilde4.col(i);
+    A_total += jacobian5_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde5.block(0, 6 * i, 6, 6) * jacobian5_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobian5_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde5.block(0, 6 * i, 6, 6) * f_obs_tilde5.col(i);
+    A_total += jacobian6_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde6.block(0, 6 * i, 6, 6) * jacobian6_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobian6_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde6.block(0, 6 * i, 6, 6) * f_obs_tilde6.col(i);
+    A_total += jacobian7_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde7.block(0, 6 * i, 6, 6) * jacobian7_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobian7_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tilde7.block(0, 6 * i, 6, 6) * f_obs_tilde7.col(i);
+    A_total += jacobianhand_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tildehand.block(0, 6 * i, 6, 6) * jacobianhand_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobianhand_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tildehand.block(0, 6 * i, 6, 6) * f_obs_tildehand.col(i);
+    A_total += jacobianEE_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tildeEE.block(0, 6 * i, 6, 6) * jacobianEE_obstacle.block(0, 7 * i, 6, 7);
+    f_total += jacobianEE_obstacle.block(0, 7 * i, 6, 7).transpose() * A_obs_tildeEE.block(0, 6 * i, 6, 6) * f_obs_tildeEE.col(i);
+  }
+  
+  A_total += A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target + jacobian.transpose() * A_attract * jacobian + jacobian.transpose() * A_dampingEE * jacobian; 
+  f_total += A_joint_limits_upper * f_joint_limits_upper + A_joint_limits_lower * f_joint_limits_lower + 
+             A_joint_velocity * f_joint_velocity + A_c_space_target * f_c_space_target + jacobian.transpose() * A_attract * x_dd_des + jacobian.transpose() *A_dampingEE *f_dampingEE;
   pseudoInverse(A_total, A_total_inv); // get pseudoinverse for pullback 
-  ddq_ =  A_total_inv* (jacobian.transpose() * A_attract * x_dd_des  + Hand_b +EE_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b 
-                          + A_joint_limits_upper * f_joint_limits_upper + A_joint_limits_lower * f_joint_limits_lower
-                          + A_joint_velocity * f_joint_velocity + A_c_space_target * f_c_space_target);
+  ddq_ =  A_total_inv * f_total;
 }
 
 void RiemannianMotionPolicy::arrayToMatrix(const std::array<double,7>& inputArray, Eigen::Matrix<double,7,1>& resultMatrix)
@@ -488,14 +501,47 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     // Handle the incoming closest point message
     //std::cout << "received closest point as " <<  msg->x << ", " << msg->y << ", " << msg->z << std::endl;
     //std::cout << "closest frame is " << msg->frame << std::endl;
-    d_obs2 << msg->frame2x, msg->frame2y, msg->frame2z;
-    d_obs3 << msg->frame3x, msg->frame3y, msg->frame3z;
-    d_obs4 << msg->frame4x, msg->frame4y, msg->frame4z;
-    d_obs5 << msg->frame5x, msg->frame5y, msg->frame5z;
-    d_obs6 << msg->frame6x, msg->frame6y, msg->frame6z;
-    d_obs7 << msg->frame7x, msg->frame7y, msg->frame7z;
-    d_obshand << msg->framehandx, msg->framehandy, msg->framehandz;
-    d_obsEE << msg->frameeex, msg->frameeey, msg->frameeez;
+    
+    //check the size of frame2x
+    number_obstacles = msg->frame2x.size();
+    
+    // Handle the closest point loop for each obstacle
+    if (number_obstacles > 0) {
+        d_obs2.resize(3, number_obstacles);
+        d_obs3.resize(3, number_obstacles);
+        d_obs4.resize(3, number_obstacles);
+        d_obs5.resize(3, number_obstacles);
+        d_obs6.resize(3, number_obstacles);
+        d_obs7.resize(3, number_obstacles);
+        d_obshand.resize(3, number_obstacles);
+        d_obsEE.resize(3, number_obstacles);
+        jacobian_array2.resize(42 * number_obstacles);
+        jacobian_array3.resize(42 * number_obstacles);
+        jacobian_array4.resize(42 * number_obstacles);
+        jacobian_array5.resize(42 * number_obstacles);
+        jacobian_array6.resize(42 * number_obstacles);
+        jacobian_array7.resize(42 * number_obstacles);
+        jacobian_arrayhand.resize(42 * number_obstacles);
+        jacobian_arrayEE.resize(42 * number_obstacles);
+        jacobian2_obstacle.resize(6, 7 * number_obstacles);
+        jacobian3_obstacle.resize(6, 7 * number_obstacles);
+        jacobian4_obstacle.resize(6, 7 * number_obstacles);
+        jacobian5_obstacle.resize(6, 7 * number_obstacles);
+        jacobian6_obstacle.resize(6, 7 * number_obstacles);
+        jacobian7_obstacle.resize(6, 7 * number_obstacles);
+        jacobianhand_obstacle.resize(6, 7 * number_obstacles);
+        jacobianEE_obstacle.resize(6, 7 * number_obstacles);
+    }
+    for (int i = 0; i < number_obstacles; i++){
+      d_obs2.col(i) << msg->frame2x[i], msg->frame2y[i], msg->frame2z[i];
+      d_obs3.col(i) << msg->frame3x[i], msg->frame3y[i], msg->frame3z[i];
+      d_obs4.col(i) << msg->frame4x[i], msg->frame4y[i], msg->frame4z[i];
+      d_obs5.col(i) << msg->frame5x[i], msg->frame5y[i], msg->frame5z[i];
+      d_obs6.col(i) << msg->frame6x[i], msg->frame6y[i], msg->frame6z[i];
+      d_obs7.col(i) << msg->frame7x[i], msg->frame7y[i], msg->frame7z[i];
+      d_obshand.col(i) << msg->framehandx[i], msg->framehandy[i], msg->framehandz[i];
+      d_obsEE.col(i) << msg->frameeex[i], msg->frameeey[i], msg->frameeez[i];
+    }
     
     // Handle the Jacobian of the closest point
     jacobian_array2 = msg->jacobian2;
@@ -506,26 +552,44 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     jacobian_array7 = msg->jacobian7;
     jacobian_arrayhand = msg->jacobianhand;
     jacobian_arrayEE = msg->jacobianee;
-    //reshape to matrix (6x7) column major
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian2obstacle(jacobian_array2.data());
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian3obstacle(jacobian_array3.data());
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian4obstacle(jacobian_array4.data());
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian5obstacle(jacobian_array5.data());
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian6obstacle(jacobian_array6.data());
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobian7obstacle(jacobian_array7.data());
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobianhandobstacle(jacobian_arrayhand.data());
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::ColMajor>> jacobianEEobstacle(jacobian_arrayEE.data());
-    //assign to class variables
-    jacobian2_obstacle = jacobian2obstacle;
-    jacobian3_obstacle = jacobian3obstacle;
-    jacobian4_obstacle = jacobian4obstacle;
-    jacobian5_obstacle = jacobian5obstacle;
-    jacobian6_obstacle = jacobian6obstacle;
-    jacobian7_obstacle = jacobian7obstacle;
-    jacobianhand_obstacle = jacobianhandobstacle;
-    jacobianEE_obstacle = jacobianEEobstacle;
-    //
-
+    
+    // Convert the Jacobian array to Eigen matrix 6 x (7 * number_obstacles). take 42 entries and reshape to 6 x 7. loop over according size
+    for (int i = 0; i < number_obstacles; i++) {
+        // Using Eigen::Map to treat a block of 42 doubles as a 6x7 matrix.
+        jacobian2_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_array2.data() + 42 * i);
+        
+        jacobian3_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_array3.data() + 42 * i);
+        
+        jacobian4_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_array4.data() + 42 * i);
+        
+        jacobian5_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_array5.data() + 42 * i);
+        
+        jacobian6_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_array6.data() + 42 * i);
+        
+        jacobian7_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_array7.data() + 42 * i);
+        
+        jacobianhand_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_arrayhand.data() + 42 * i);
+        
+        jacobianEE_obstacle.block(0, 7 * i, 6, 7) =
+            Eigen::Map<Eigen::Matrix<double, 6, 7>>(jacobian_arrayEE.data() + 42 * i);
+    }
+    
+    // first three rows of the Jacobian are the translational part
+    Jp_obstacle2 = jacobian2_obstacle.topRows(3);
+    Jp_obstacle3 = jacobian3_obstacle.topRows(3);
+    Jp_obstacle4 = jacobian4_obstacle.topRows(3);
+    Jp_obstacle5 = jacobian5_obstacle.topRows(3);
+    Jp_obstacle6 = jacobian6_obstacle.topRows(3);
+    Jp_obstacle7 = jacobian7_obstacle.topRows(3);
+    Jp_obstaclehand = jacobianhand_obstacle.topRows(3);
+    Jp_obstacleEE = jacobianEE_obstacle.topRows(3);
 }
 
 
@@ -570,15 +634,6 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
   std::array<double, 7> gravity_force_vector_array = franka_robot_model_->getGravityForceVector();
   
-  Jp_obstacle2 = jacobian2_obstacle.topRows(3);
-  Jp_obstacle3 = jacobian3_obstacle.topRows(3);
-  Jp_obstacle4 = jacobian4_obstacle.topRows(3);
-  Jp_obstacle5 = jacobian5_obstacle.topRows(3);
-  Jp_obstacle6 = jacobian6_obstacle.topRows(3);
-  Jp_obstacle7 = jacobian7_obstacle.topRows(3);
-  Jp_obstaclehand = jacobianhand_obstacle.topRows(3);
-  Jp_obstacleEE = jacobianEE_obstacle.topRows(3);
-
   jacobian_array =  franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
   std::array<double, 16> pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
@@ -614,30 +669,61 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
   x_dd_des = (-K_RMP * (error) - D_RMP* jacobian * dq_);
   A_attract = calculate_target_attraction(error, jacobian);
-  f_obs_tildeEE = calculate_f_obstacle(d_obsEE, Jp_obstacleEE);
-  A_obs_tildeEE = calculate_A_obstacle(d_obsEE, f_obs_tildeEE, 0.5, Jp_obstacleEE);
-  f_obs_tilde2 = calculate_f_obstacle(d_obs2, Jp_obstacle2);
-  A_obs_tilde2 = calculate_A_obstacle(d_obs2, f_obs_tilde2, 0.5, Jp_obstacle2);
-  f_obs_tilde3 = calculate_f_obstacle(d_obs3, Jp_obstacle3);
-  A_obs_tilde3 = calculate_A_obstacle(d_obs3, f_obs_tilde3, 0.5, Jp_obstacle3);
-  f_obs_tilde4 = calculate_f_obstacle(d_obs4, Jp_obstacle4);
-  A_obs_tilde4 = calculate_A_obstacle(d_obs4, f_obs_tilde4, 0.5,  Jp_obstacle4);
-  f_obs_tilde5 = calculate_f_obstacle(d_obs5, Jp_obstacle5);
-  A_obs_tilde5 = calculate_A_obstacle(d_obs5, f_obs_tilde5, 0.5, Jp_obstacle5);
-  f_obs_tilde6 = calculate_f_obstacle(d_obs6, Jp_obstacle6);
-  A_obs_tilde6 = calculate_A_obstacle(d_obs6, f_obs_tilde6, 0.5,   Jp_obstacle6);
-  f_obs_tilde7 = calculate_f_obstacle(d_obs7, Jp_obstacle7);
-  A_obs_tilde7 = calculate_A_obstacle(d_obs7, f_obs_tilde7, 0.5, Jp_obstacle7);
-  f_obs_tildehand = calculate_f_obstacle(d_obshand, Jp_obstaclehand);
-  A_obs_tildehand = calculate_A_obstacle(d_obshand, f_obs_tildehand, 0.5, Jp_obstaclehand);
-  auto [f_damping2, A_damping2] = calculate_global_damping(Jp_obstacle2);
-  auto [f_damping3, A_damping3] = calculate_global_damping(Jp_obstacle3);
-  auto [f_damping4, A_damping4] = calculate_global_damping(Jp_obstacle4);
-  auto [f_damping5, A_damping5] = calculate_global_damping(Jp_obstacle5);
-  auto [f_damping6, A_damping6] = calculate_global_damping(Jp_obstacle6);
-  auto [f_damping7, A_damping7] = calculate_global_damping(Jp_obstacle7);
-  auto [f_dampinghand, A_dampinghand] = calculate_global_damping(Jp_obstaclehand);
-  auto [f_dampingEE, A_dampingEE] = calculate_global_damping(Jp_obstacleEE);
+
+  if (number_obstacles != 0){
+    f_obs_tilde2.resize(6, number_obstacles);
+    A_obs_tilde2.resize(6, 6 * number_obstacles);
+    f_obs_tilde3.resize(6, number_obstacles);
+    A_obs_tilde3.resize(6, 6 * number_obstacles);
+    f_obs_tilde4.resize(6, number_obstacles);
+    A_obs_tilde4.resize(6, 6 * number_obstacles);
+    f_obs_tilde5.resize(6, number_obstacles);
+    A_obs_tilde5.resize(6, 6 * number_obstacles);
+    f_obs_tilde6.resize(6, number_obstacles);
+    A_obs_tilde6.resize(6, 6 * number_obstacles);
+    f_obs_tilde7.resize(6, number_obstacles);
+    A_obs_tilde7.resize(6, 6 * number_obstacles);
+    f_obs_tildehand.resize(6, number_obstacles);
+    A_obs_tildehand.resize(6, 6 * number_obstacles);
+    f_obs_tildeEE.resize(6, number_obstacles);
+    A_obs_tildeEE.resize(6, 6 * number_obstacles);
+    for (int i = 0; i < number_obstacles; i++){
+      f_obs_tilde2.col(i) = calculate_f_obstacle(d_obs2.col(i), Jp_obstacle2.block(0, 7 * i, 3, 7));
+      A_obs_tilde2.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obs2.col(i), f_obs_tilde2.col(i), 0.5, Jp_obstacle2.block(0, 7 * i, 3, 7));
+      f_obs_tilde3.col(i) = calculate_f_obstacle(d_obs3.col(i), Jp_obstacle3.block(0, 7 * i, 3, 7));
+      A_obs_tilde3.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obs3.col(i), f_obs_tilde3.col(i), 0.5, Jp_obstacle3.block(0, 7 * i, 3, 7));
+      f_obs_tilde4.col(i) = calculate_f_obstacle(d_obs4.col(i), Jp_obstacle4.block(0, 7 * i, 3, 7));
+      A_obs_tilde4.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obs4.col(i), f_obs_tilde4.col(i), 0.5, Jp_obstacle4.block(0, 7 * i, 3, 7));
+      f_obs_tilde5.col(i) = calculate_f_obstacle(d_obs5.col(i), Jp_obstacle5.block(0, 7 * i, 3, 7));
+      A_obs_tilde5.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obs5.col(i), f_obs_tilde5.col(i), 0.5, Jp_obstacle5.block(0, 7 * i, 3, 7));
+      f_obs_tilde6.col(i) = calculate_f_obstacle(d_obs6.col(i), Jp_obstacle6.block(0, 7 * i, 3, 7));
+      A_obs_tilde6.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obs6.col(i), f_obs_tilde6.col(i), 0.5, Jp_obstacle6.block(0, 7 * i, 3, 7));
+      f_obs_tilde7.col(i) = calculate_f_obstacle(d_obs7.col(i), Jp_obstacle7.block(0, 7 * i, 3, 7));
+      A_obs_tilde7.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obs7.col(i), f_obs_tilde7.col(i), 0.5, Jp_obstacle7.block(0, 7 * i, 3, 7));
+      f_obs_tildehand.col(i) = calculate_f_obstacle(d_obshand.col(i), Jp_obstaclehand.block(0, 7 * i, 3, 7));
+      A_obs_tildehand.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obshand.col(i), f_obs_tildehand.col(i), 0.5, Jp_obstaclehand.block(0, 7 * i, 3, 7));
+      f_obs_tildeEE.col(i) = calculate_f_obstacle(d_obsEE.col(i), Jp_obstacleEE.block(0, 7 * i, 3, 7));
+      A_obs_tildeEE.block(0, 6 * i, 6, 6) = calculate_A_obstacle(d_obsEE.col(i), f_obs_tildeEE.col(i), 0.5, Jp_obstacleEE.block(0, 7 * i, 3, 7));  
+    }
+  } else {
+    f_obs_tilde2 = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tilde2 = Eigen::MatrixXd::Zero(6,6);
+    f_obs_tilde3 = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tilde3 = Eigen::MatrixXd::Zero(6,6);
+    f_obs_tilde4 = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tilde4 = Eigen::MatrixXd::Zero(6,6);
+    f_obs_tilde5 = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tilde5 = Eigen::MatrixXd::Zero(6,6);
+    f_obs_tilde6 = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tilde6 = Eigen::MatrixXd::Zero(6,6);
+    f_obs_tilde7 = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tilde7 = Eigen::MatrixXd::Zero(6,6);
+    f_obs_tildehand = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tildehand = Eigen::MatrixXd::Zero(6,6);
+    f_obs_tildeEE = Eigen::MatrixXd::Zero(6,1);
+    A_obs_tildeEE = Eigen::MatrixXd::Zero(6,6);
+  }
+  auto [f_dampingEE, A_dampingEE] = calculate_global_damping(jacobian.topRows(3));
   rmp_joint_limit_avoidance();
   rmp_joint_velocity_limits();
   rmp_cspacetarget();
@@ -669,7 +755,7 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
     command_interfaces_[i].set_value(tau_d(i));
   }
   
-  if (outcounter % 1000/update_frequency == 0){
+  /*if (outcounter % 1000/update_frequency == 0){
     std::cout<<"ddq" << std::endl;
     std::cout << ddq_<< std::endl;
     std::cout << "x_dd_des" << std::endl;
@@ -678,15 +764,9 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
     std::cout << error << std::endl;
     std::cout << "A_attract" << std::endl;
     std::cout << A_attract << std::endl;
-    std::cout << " f_orthogonal" << std::endl;
-    std::cout << f_orthogonal << std::endl;
-    std::cout << "A_orthogonal" << std::endl;
-    std::cout << A_orthogonal << std::endl;
-    std::cout << "Eigenvalues" << std::endl;
-    std::cout << eigenValues << std::endl;
-    std::cout << "EigenVectors" << std::endl;
-    std::cout << eigenVectors << std::endl;
-  }
+    std::cout << "d_obs2" << std::endl;
+    std::cout << d_obs2 << std::endl;
+  }*/
   outcounter++;
 
   

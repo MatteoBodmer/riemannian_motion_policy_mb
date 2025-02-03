@@ -230,89 +230,64 @@ public:
 
     double beta_orientation = 0;
     //RMP Obstacle Avoidance Parameters
+    double number_obstacles = 0;
     //Minimum distance to obstacle per link
-    Eigen::Vector3d d_obs2 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    Eigen::Vector3d d_obs3 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    Eigen::Vector3d d_obs4 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    Eigen::Vector3d d_obs5 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    Eigen::Vector3d d_obs6 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    Eigen::Vector3d d_obs7 = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    Eigen::Vector3d d_obshand = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    Eigen::Vector3d d_obsEE = (Eigen::VectorXd(3) << 100, 100, 100).finished();
-    
-    Eigen::Matrix<double, 6, 7> jacobian2 = Eigen::MatrixXd::Zero(6,7);
-    
-    Eigen::Matrix<double, 6, 7> jacobian3 = Eigen::MatrixXd::Zero(6,7);
+    Eigen::MatrixXd d_obs2;
+    Eigen::MatrixXd d_obs3;
+    Eigen::MatrixXd d_obs4;
+    Eigen::MatrixXd d_obs5;
+    Eigen::MatrixXd d_obs6;
+    Eigen::MatrixXd d_obs7;
+    Eigen::MatrixXd d_obshand;
+    Eigen::MatrixXd d_obsEE;
    
-    Eigen::Matrix<double, 6, 7> jacobian4 = Eigen::MatrixXd::Zero(6,7);
-    
-    Eigen::Matrix<double, 6, 7> jacobian5 = Eigen::MatrixXd::Zero(6,7);
-    
-    Eigen::Matrix<double, 6, 7> jacobian6 = Eigen::MatrixXd::Zero(6,7);
-    
-    Eigen::Matrix<double, 6, 7> jacobian7 = Eigen::MatrixXd::Zero(6,7);
+    std::vector<double> jacobian_array2;
+    std::vector<double> jacobian_array3;
+    std::vector<double> jacobian_array4;
+    std::vector<double> jacobian_array5;
+    std::vector<double> jacobian_array6;
+    std::vector<double> jacobian_array7;
+    std::vector<double> jacobian_arrayhand;
+    std::vector<double> jacobian_arrayEE;
+    Eigen::MatrixXd jacobian2_obstacle;
+    Eigen::MatrixXd jacobian3_obstacle;
+    Eigen::MatrixXd jacobian4_obstacle;
+    Eigen::MatrixXd jacobian5_obstacle;
+    Eigen::MatrixXd jacobian6_obstacle;
+    Eigen::MatrixXd jacobian7_obstacle;
+    Eigen::MatrixXd jacobianhand_obstacle;
+    Eigen::MatrixXd jacobianEE_obstacle;
 
-    Eigen::Matrix<double, 6, 7> jacobianhand = Eigen::MatrixXd::Zero(6,7);
-   
-    Eigen::Matrix<double, 6, 7> jacobianEE = Eigen::MatrixXd::Zero(6,7);
-   
-    std::array<double, 42> jacobian_array2;
-    std::array<double, 42> jacobian_array3;
-    std::array<double, 42> jacobian_array4;
-    std::array<double, 42> jacobian_array5;
-    std::array<double, 42> jacobian_array6;
-    std::array<double, 42> jacobian_array7;
-    std::array<double, 42> jacobian_arrayhand;
-    std::array<double, 42> jacobian_arrayEE;
-    Eigen::Matrix<double, 6, 7> jacobian2_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 6, 7> jacobian3_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 6, 7> jacobian4_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 6, 7> jacobian5_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 6, 7> jacobian6_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 6, 7> jacobian7_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 6, 7> jacobianhand_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 6, 7> jacobianEE_obstacle = Eigen::MatrixXd::Zero(6,7);
-    Eigen::Matrix<double, 3, 7> Jp_obstacle2;
-    Eigen::Matrix<double, 3, 7> Jp_obstacle3 ;
-    Eigen::Matrix<double, 3, 7> Jp_obstacle4;
-    Eigen::Matrix<double, 3, 7> Jp_obstacle5;
-    Eigen::Matrix<double, 3, 7> Jp_obstacle6;
-    Eigen::Matrix<double, 3, 7> Jp_obstacle7;
-    Eigen::Matrix<double, 3, 7> Jp_obstaclehand;
-    Eigen::Matrix<double, 3, 7> Jp_obstacleEE ;
+    Eigen::MatrixXd Jp_obstacle2;
+    Eigen::MatrixXd Jp_obstacle3;
+    Eigen::MatrixXd Jp_obstacle4;
+    Eigen::MatrixXd Jp_obstacle5;
+    Eigen::MatrixXd Jp_obstacle6;
+    Eigen::MatrixXd Jp_obstacle7;
+    Eigen::MatrixXd Jp_obstaclehand;
+    Eigen::MatrixXd Jp_obstacleEE;
+    
     
 
-    Eigen::VectorXd f_obs_tilde2 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tilde2 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_obs_tilde3 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tilde3 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_obs_tilde4 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tilde4 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_obs_tilde5 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tilde5 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_obs_tilde6 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tilde6 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_obs_tilde7 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tilde7 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_obs_tildehand = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_obs_tildehand = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_obs_tildeEE = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_obs_tildeEE = Eigen::MatrixXd::Zero(6,6);
+    Eigen::MatrixXd f_obs_tilde2; 
+    Eigen::MatrixXd A_obs_tilde2;
+    Eigen::MatrixXd f_obs_tilde3;
+    Eigen::MatrixXd A_obs_tilde3;
+    Eigen::MatrixXd f_obs_tilde4;
+    Eigen::MatrixXd A_obs_tilde4;
+    Eigen::MatrixXd f_obs_tilde5;
+    Eigen::MatrixXd A_obs_tilde5;
+    Eigen::MatrixXd f_obs_tilde6;
+    Eigen::MatrixXd A_obs_tilde6;
+    Eigen::MatrixXd f_obs_tilde7;
+    Eigen::MatrixXd A_obs_tilde7;
+    Eigen::MatrixXd f_obs_tildehand;
+    Eigen::MatrixXd A_obs_tildehand;
+    Eigen::MatrixXd f_obs_tildeEE;
+    Eigen::MatrixXd A_obs_tildeEE;
 
-    Eigen::VectorXd f_damping2 = Eigen::VectorXd::Zero(6); 
-    Eigen::Matrix<double, 6, 6> A_damping2 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_damping3 = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_damping3 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_damping4 = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_damping4 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_damping5 = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_damping5 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_damping6 = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_damping6 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_damping7 = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_damping7 = Eigen::MatrixXd::Zero(6,6);
-    Eigen::VectorXd f_dampinghand = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_dampinghand = Eigen::MatrixXd::Zero(6,6);
+
+    
     Eigen::VectorXd f_dampingEE = Eigen::VectorXd::Zero(6);
     Eigen::Matrix<double, 6, 6> A_dampingEE = Eigen::MatrixXd::Zero(6,6);
 
