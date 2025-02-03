@@ -105,7 +105,6 @@ public:
     void topic_callback(const std::shared_ptr<franka_msgs::msg::FrankaRobotState> msg);
     void closestPointCallback(const messages_fr3::msg::ClosestPoint::SharedPtr msg);
     void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
-    void desiredJointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
     void reference_pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg);
     void rmp_joint_limit_avoidance();
     void rmp_joint_velocity_limits();
@@ -125,12 +124,9 @@ public:
     Eigen::VectorXd calculate_f_obstacle(const Eigen::VectorXd& d_obs, const Eigen::MatrixXd& Jp_obstacle);
     Eigen::MatrixXd calculate_A_obstacle(const Eigen::VectorXd& d_obs,
                                       const Eigen::VectorXd& f_obs, double r_a, const Eigen::MatrixXd& Jp_obstacle);
-    Eigen::Vector3d calculateNearestPointOnSphere(const Eigen::Vector3d& position,
-                                                                      const Eigen::Vector3d& sphereCenter, 
-                                                                      double radius);
     Eigen::MatrixXd calculate_target_attraction(const Eigen::VectorXd& error, const Eigen::MatrixXd& jacobian);
     std::pair<Eigen::VectorXd, Eigen::MatrixXd> calculate_global_damping(const Eigen::MatrixXd& Jp_obstacle);
-    
+   
     //State vectors and matrices
     Eigen::Matrix<double, 7, 7> M;
     std::array<double, 7> q_subscribed;
@@ -244,7 +240,6 @@ public:
     Eigen::Vector3d d_obshand = (Eigen::VectorXd(3) << 100, 100, 100).finished();
     Eigen::Vector3d d_obsEE = (Eigen::VectorXd(3) << 100, 100, 100).finished();
     
-
     Eigen::Matrix<double, 6, 7> jacobian2 = Eigen::MatrixXd::Zero(6,7);
     
     Eigen::Matrix<double, 6, 7> jacobian3 = Eigen::MatrixXd::Zero(6,7);
@@ -322,7 +317,10 @@ public:
     Eigen::Matrix<double, 6, 6> A_dampingEE = Eigen::MatrixXd::Zero(6,6);
 
     Eigen::VectorXd f_attract = Eigen::VectorXd::Zero(6);
-    Eigen::Matrix<double, 6, 6> A_attract = Eigen::MatrixXd::Identity(6,6);
+    Eigen::Matrix<double, 6, 6> A_attract = Eigen::MatrixXd::Zero(6,6);
+
+    Eigen::VectorXd f_orthogonal = Eigen::VectorXd::Zero(6);
+    Eigen::Matrix<double, 6, 6> A_orthogonal = Eigen::MatrixXd::Zero(6,6);
 
     Eigen::VectorXd f_joint_velocity = Eigen::VectorXd::Zero(7);
     Eigen::Matrix<double, 7, 7> A_joint_velocity = Eigen::MatrixXd::Zero(7,7);
@@ -335,6 +333,9 @@ public:
 
     Eigen::VectorXd f_c_space_target = Eigen::VectorXd::Zero(7);
     Eigen::Matrix<double, 7, 7> A_c_space_target = Eigen::MatrixXd::Zero(7,7);
+    
+    Eigen::VectorXd eigenValues = Eigen::VectorXd::Zero(3);
+    Eigen::MatrixXd eigenVectors = Eigen::MatrixXd::Zero(3,3);
 
     //Tuning parameters
     // Obstacle Avoidance Parameters
@@ -375,12 +376,11 @@ public:
 
     
     // C-space Target Parameters
-    double kp_c_space_target;
-    double kd_c_space_target;
+    Eigen::Matrix <double, 7, 7> kp_c_space_target = Eigen::MatrixXd::Zero(7,7);
+    Eigen::Matrix <double, 7, 7> kd_c_space_target = Eigen::MatrixXd::Zero(7,7);
     double theta_cspace;
     double weight_c_space_target;
 
-  
     Eigen::Vector3d sphere_center = (Eigen::VectorXd(3) << 0.3, 0.0, 0.5).finished();
     double sphere_radius = 0.1;
     

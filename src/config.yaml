@@ -1,8 +1,8 @@
 # RMP Obstacle Avoidance
 obstacle_avoidance:
-  eta_rep: 20.0
-  mu_rep: 0.01
-  eta_damp: 30.0
+  eta_rep: 100.0
+  mu_rep: 0.03
+  eta_damp: 40.0
   mu_damp: 0.04
   epsilon: 0.001
   weight_obstacle: 1.0
@@ -14,8 +14,8 @@ attractor:
   sigma_b: 0.008
   b: 20.0
   sigma_o: 0.008
-  b_axis: 2000.0
-  weight_attractor: 1.0
+  b_axis: 20.0
+  weight_attractor: 0.1
 
 # RMP Global Damping
 global_damping:
@@ -30,7 +30,7 @@ velocity_limits:
 # RMP Joint Limits
 joint_limits:
   kp_joint_limits: 1.0 #k_p
-  kd_joint_limits: 20.0 #k_d
+  kd_joint_limits: 2.0 #k_d
   metric_length_scale: 0.01 #l_m
   epsilon_joint_limits: 0.001 #epsilon_m
   metric_velocity_length_scale: 0.01  #v_m
@@ -40,7 +40,7 @@ joint_limits:
 
 # RMP C-space Target
 c_space_target:
-  kp_c_space_target: 1.0 #k_p
-  kd_c_space_target: 2.0 #k_d
+  kp_c_space_target: [10, 10, 10, 10, 10, 5, 1] #k_p
+  kd_c_space_target: [11, 11, 11, 11, 11, 11, 11] #k_d
   theta: 0.5 #theta
-  weight_c_space_target: 0.02
+  weight_c_space_target: 0.5

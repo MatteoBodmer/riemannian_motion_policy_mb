@@ -19,7 +19,7 @@
 #include <string>
 #include <Eigen/Eigen>
 #include <chrono>
-#include <yaml-cpp/yaml.h>>
+#include <yaml-cpp/yaml.h>
 
 
 using namespace std::chrono;
@@ -61,30 +61,6 @@ inline void pseudoInverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, b
      S_(i, i) = (sing_vals_(i)) / (sing_vals_(i) * sing_vals_(i) + lambda_ * lambda_);
 
   M_pinv_ = Eigen::MatrixXd(svd.matrixV() * S_.transpose() * svd.matrixU().transpose());
-}
-//Calculate nearest point on sphere
-Eigen::Vector3d RiemannianMotionPolicy::calculateNearestPointOnSphere(const Eigen::Vector3d& position,
-                                                                      const Eigen::Vector3d& sphereCenter, 
-                                                                      double radius) {
-    // Calculate the vector from end-effector to sphere center
-    Eigen::Vector3d vector = sphereCenter - position;
-
-    // Calculate the magnitude of the vector
-    double distanceToCenter = vector.norm();
-
-    // Handle edge case where the end-effector is at the sphere center
-    if (distanceToCenter < 1e-6) {
-        std::cerr << "End-effector is at the sphere center. Returning sphere center as nearest point.\n";
-        return sphereCenter;
-    }
-
-    // Normalize the vector to get the direction to the nearest point on the surface
-    Eigen::Vector3d direction = vector / distanceToCenter;
-    
-    // Compute the nearest point on the sphere's surface to robot
-    Eigen::Vector3d nearestPoint = vector - radius * direction;
-
-    return nearestPoint;
 }
 
 //RMP calculation for obstacle avoidance
@@ -191,7 +167,7 @@ Eigen::MatrixXd RiemannianMotionPolicy::calculate_target_attraction(const Eigen:
   double alpha = (1 - alpha_min) *exp((-1 * error_position.squaredNorm()) / (2*sigma_a)) + alpha_min;
   double beta = exp((-1 * error_position.squaredNorm()) / (2*sigma_b));
   M_near = Eigen::Matrix3d::Identity();
-  M_far = 0/(error_position.squaredNorm()) * error_position * error_position.transpose();
+  M_far = 1.0/(error_position.squaredNorm()) * error_position * error_position.transpose();
   A_position = (beta * b + (1 - beta)) * (alpha * M_near + (1 - alpha) * M_far);
   A_attract.topLeftCorner(3, 3) = A_position;
   
@@ -259,15 +235,19 @@ void RiemannianMotionPolicy::rmp_joint_limit_avoidance(){
 void RiemannianMotionPolicy::rmp_cspacetarget(){
   for (size_t i = 0; i < 7; ++i) {
     if(std::abs(q_(i)) < theta_cspace){
-      f_c_space_target(i) = kp_c_space_target * (q_0(i) - q_(i)) - kd_c_space_target * dq_(i);
+      f_c_space_target(i) = kp_c_space_target(i,i) * (q_0(i) - q_(i)) - kd_c_space_target(i,i) * dq_(i);
     }
     else{
       double diff = q_0(i) - q_(i);  // Scalar difference
       double abs_diff = std::abs(diff) + 1e-6;
-      f_c_space_target(i) = kp_c_space_target * theta_cspace * diff/abs_diff - kd_c_space_target * dq_(i);
+      f_c_space_target(i) = kp_c_space_target(i,i) * theta_cspace * diff/abs_diff - kd_c_space_target(i,i) * dq_(i);
     }
   }
-    A_c_space_target = weight_c_space_target * Eigen::MatrixXd::Identity(7,7);
+    Eigen::Vector3d f_obs_head = f_obs_tildeEE.head<3>(); // Convert to fixed-size 3D vector
+    Eigen::Vector3d x_dd_d_head = x_dd_des.head<3>();
+    double gain = std::abs(x_dd_d_head.dot(f_obs_head) / (x_dd_d_head.norm() * f_obs_head.norm() + 0.001));
+
+    A_c_space_target = weight_c_space_target * gain  * Eigen::MatrixXd::Identity(7,7) ;
 }
 //get global joint acceleration for torque calculation
 void RiemannianMotionPolicy::get_ddq(){
@@ -291,10 +271,10 @@ void RiemannianMotionPolicy::get_ddq(){
   Eigen::MatrixXd Link7_b = jacobian7_obstacle.transpose() * A_obs_tilde7 * f_obs_tilde7 + jacobian7_obstacle.transpose() * A_damping7 * f_damping7;
   Eigen::MatrixXd Hand_b = jacobianhand_obstacle.transpose() * A_obs_tildehand * f_obs_tildehand + jacobianhand_obstacle.transpose() * A_dampinghand * f_dampinghand;
   Eigen::MatrixXd EE_b = jacobianEE_obstacle.transpose() * A_obs_tildeEE * f_obs_tildeEE + jacobianEE_obstacle.transpose() * A_dampingEE * f_dampingEE;
-  Eigen::MatrixXd A_total = jacobian.transpose()*A_attract *jacobian + Hand_a +EE_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target;
+  Eigen::MatrixXd A_total = jacobian.transpose()*A_attract *jacobian + Hand_a + EE_a +Link2_a + Link3_a + Link4_a + Link5_a + Link6_a + Link7_a + A_joint_limits_upper + A_joint_limits_lower + A_joint_velocity + A_c_space_target;
   Eigen::MatrixXd A_total_inv;
   pseudoInverse(A_total, A_total_inv); // get pseudoinverse for pullback 
-  ddq_ =  A_total_inv* (jacobian.transpose() * A_attract * x_dd_des + Hand_b +EE_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b 
+  ddq_ =  A_total_inv* (jacobian.transpose() * A_attract * x_dd_des  + Hand_b +EE_b +Link2_b + Link3_b + Link4_b + Link5_b + Link6_b + Link7_b 
                           + A_joint_limits_upper * f_joint_limits_upper + A_joint_limits_lower * f_joint_limits_lower
                           + A_joint_velocity * f_joint_velocity + A_c_space_target * f_c_space_target);
 }
@@ -432,8 +412,15 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
   weight_joint_limits = config["joint_limits"]["weight_joint_limits"].as<double>();
 
   // Load C-space Target parameters
-  kp_c_space_target = config["c_space_target"]["kp_c_space_target"].as<double>();
-  kd_c_space_target = config["c_space_target"]["kd_c_space_target"].as<double>();
+  // Read kp_c_space_target into an Eigen::VectorXd
+  std::vector<double> kp_values = config["c_space_target"]["kp_c_space_target"].as<std::vector<double>>();
+  Eigen::VectorXd kp_vector = Eigen::Map<Eigen::VectorXd>(kp_values.data(), kp_values.size());
+  // Read kd_c_space_target into an Eigen::VectorXd
+  std::vector<double> kd_values = config["c_space_target"]["kd_c_space_target"].as<std::vector<double>>();
+  Eigen::VectorXd kd_vector = Eigen::Map<Eigen::VectorXd>(kd_values.data(), kd_values.size());
+  // Create diagonal matrices
+  kp_c_space_target = kp_vector.asDiagonal();
+  kd_c_space_target = kd_vector.asDiagonal();
   theta_cspace = config["c_space_target"]["theta"].as<double>();
   weight_c_space_target = config["c_space_target"]["weight_c_space_target"].as<double>();
 
@@ -509,6 +496,7 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     d_obs7 << msg->frame7x, msg->frame7y, msg->frame7z;
     d_obshand << msg->framehandx, msg->framehandy, msg->framehandz;
     d_obsEE << msg->frameeex, msg->frameeey, msg->frameeez;
+    
     // Handle the Jacobian of the closest point
     jacobian_array2 = msg->jacobian2;
     jacobian_array3 = msg->jacobian3;
@@ -536,6 +524,7 @@ void RiemannianMotionPolicy::closestPointCallback(const messages_fr3::msg::Close
     jacobian7_obstacle = jacobian7obstacle;
     jacobianhand_obstacle = jacobianhandobstacle;
     jacobianEE_obstacle = jacobianEEobstacle;
+    //
 
 }
 
@@ -625,7 +614,6 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   Lambda = (jacobian * M.inverse() * jacobian.transpose()).inverse();
   x_dd_des = (-K_RMP * (error) - D_RMP* jacobian * dq_);
   A_attract = calculate_target_attraction(error, jacobian);
-  //A_attract = Eigen::MatrixXd::Zero(6, 6);
   f_obs_tildeEE = calculate_f_obstacle(d_obsEE, Jp_obstacleEE);
   A_obs_tildeEE = calculate_A_obstacle(d_obsEE, f_obs_tildeEE, 0.5, Jp_obstacleEE);
   f_obs_tilde2 = calculate_f_obstacle(d_obs2, Jp_obstacle2);
@@ -656,7 +644,7 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   get_ddq();
   
   // Calculate the desired torque
-  tau_RMP = M * ddq_;
+  tau_RMP = ddq_;
   // Calculate friction torques
   //calculate_tau_friction();
   calculate_tau_gravity(coriolis, gravity_force_vector, jacobian);
@@ -684,14 +672,20 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   if (outcounter % 1000/update_frequency == 0){
     std::cout<<"ddq" << std::endl;
     std::cout << ddq_<< std::endl;
-    std::cout<<"f_obs_tildeEE" << std::endl;
-    std::cout << f_obs_tildeEE << std::endl;
-    std::cout<<"f_joint_velocity" << std::endl;
-    std::cout << f_joint_velocity << std::endl;
-    std::cout<<"f_dampingEE" << std::endl;
-    std::cout << f_dampingEE << std::endl;
-    //std::cout << "error_pose" << std::endl;
-    //std::cout << error << std::endl;
+    std::cout << "x_dd_des" << std::endl;
+    std::cout << x_dd_des << std::endl;
+    std::cout << "error_pose" << std::endl;
+    std::cout << error << std::endl;
+    std::cout << "A_attract" << std::endl;
+    std::cout << A_attract << std::endl;
+    std::cout << " f_orthogonal" << std::endl;
+    std::cout << f_orthogonal << std::endl;
+    std::cout << "A_orthogonal" << std::endl;
+    std::cout << A_orthogonal << std::endl;
+    std::cout << "Eigenvalues" << std::endl;
+    std::cout << eigenValues << std::endl;
+    std::cout << "EigenVectors" << std::endl;
+    std::cout << eigenVectors << std::endl;
   }
   outcounter++;
 
