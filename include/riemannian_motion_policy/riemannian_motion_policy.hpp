@@ -152,11 +152,11 @@ public:
     // control input
     int control_mode; // either position control or velocity control
     Eigen::Matrix<double, 7, 1> tau_impedance; // impedance torque
-    Eigen::Matrix<double, 7, 1> tau_impedance_filtered = Eigen::MatrixXd::Zero(7,1); // impedance torque filtered
+    Eigen::Matrix<double, 7, 1> tau_impedance_filtered; // impedance torque filtered
     Eigen::Matrix<double, 7, 1> tau_friction;
     Eigen::Matrix<double, 7, 1> tau_threshold;  //Creating and filtering a "fake" tau_impedance with own weights, optimized for friction compensation
     Eigen::Matrix<double, 7, 1> tau_d; //final control torque
-    bool friction_ = true; // set if friciton compensation should be turned on
+    bool friction_ = false; // set if friciton compensation should be turned on
     Eigen::MatrixXd N; // nullspace projection matrix
     // friction compensation observer
     Eigen::Matrix<double, 7, 1> dz = Eigen::MatrixXd::Zero(7,1);
@@ -201,7 +201,7 @@ public:
 
     //RMP Parameters
     
-    const Eigen::Matrix<double, 7, 1> q_0= (Eigen::VectorXd(7) << 0.0, -0.785, 0.0, -2.356, 0.0, 1.57, 0.0).finished();
+    Eigen::Matrix<double, 7, 1> q_0= (Eigen::VectorXd(7) << 0.0, -1.4, 0.0, -1.356, 0.0, 1.57, 0.0).finished();
     const Eigen::Matrix<double, 7, 1> q_lower_limit = (Eigen::VectorXd(7) << -2.74, -1.78,-2.9, -3.04, -2.8, 0.5445, -3.01).finished();
     const Eigen::Matrix<double, 7, 1> q_upper_limit = (Eigen::VectorXd(7) << 2.74,1.78, 2.9, -0.15, 2.8, 4.5169, 3.0).finished();
     

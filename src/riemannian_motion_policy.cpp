@@ -243,14 +243,15 @@ void RiemannianMotionPolicy::rmp_cspacetarget(){
       f_c_space_target(i) = kp_c_space_target(i,i) * theta_cspace * diff/abs_diff - kd_c_space_target(i,i) * dq_(i);
     }
   }
-    Eigen::Vector3d f_obs_head =  f_obs_tildeEE.topRows(3); // dimension 3 x n
+    Eigen::MatrixXd f_obs_head = f_obs_tildeEE.block(0, 1, f_obs_tildeEE.rows(), f_obs_tildeEE.cols() - 1);
+
     Eigen::Vector3d x_dd_d_head = x_dd_des.head<3>(); // dimension 3 x 1
     Eigen::VectorXd dotProducts = f_obs_head.transpose() * x_dd_d_head;
 
     // Find the index of the maximum dot product.
     int maxIndex;
     dotProducts.maxCoeff(&maxIndex);
-
+    
     // Extract the column that has the highest dot product.
     Eigen::Vector3d bestColumn = f_obs_head.col(maxIndex);
     double gain = std::abs(x_dd_d_head.dot(bestColumn) / (x_dd_d_head.norm() * bestColumn.norm() + 0.001));
@@ -387,7 +388,7 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
   const rclcpp_lifecycle::State& /*previous_state*/) {
   franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_); 
   //Load parameters from yaml file
-  YAML::Node config = YAML::LoadFile("/home/andri/franka_ros2_ws/src/riemannian_motion_policy/src/config.yaml");
+  YAML::Node config = YAML::LoadFile("/home/student/franka_ros2_ws/src/riemannian_motion_policy/src/config.yaml");
 
   // Load obstacle avoidance parameters
   eta_rep = config["obstacle_avoidance"]["eta_rep"].as<double>();
@@ -726,17 +727,24 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   auto [f_dampingEE, A_dampingEE] = calculate_global_damping(jacobian.topRows(3));
   rmp_joint_limit_avoidance();
   rmp_joint_velocity_limits();
-  rmp_cspacetarget();
+  if(number_obstacles > 0){
+    if(position_d_target_(0)< 0){
+      q_0(0) = -2.4;
+    }
+    rmp_cspacetarget();
+  }
   get_ddq();
   
   // Calculate the desired torque
   tau_RMP = ddq_;
   // Calculate friction torques
-  //calculate_tau_friction();
+  N = (Eigen::MatrixXd::Identity(7, 7) - jacobian_pinv * jacobian);
+  
+  calculate_tau_friction();
   calculate_tau_gravity(coriolis, gravity_force_vector, jacobian);
   //tau_gravity_error = tau_gravity - gravity_force_vector;
 
-  auto tau_d_placeholder = tau_RMP + coriolis; //add nullspace, friction, gravity and coriolis components to desired torque
+  auto tau_d_placeholder = tau_RMP + coriolis + tau_friction; //add nullspace, friction, gravity and coriolis components to desired torque
   tau_d << tau_d_placeholder;
   tau_d << saturateTorqueRate(tau_d, tau_J_d_M);  // Saturate torque rate to avoid discontinuities
   tau_J_d_M = tau_d;
@@ -755,18 +763,12 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
     command_interfaces_[i].set_value(tau_d(i));
   }
   
-  /*if (outcounter % 1000/update_frequency == 0){
+  if (outcounter % 1000/update_frequency == 0){
     std::cout<<"ddq" << std::endl;
     std::cout << ddq_<< std::endl;
-    std::cout << "x_dd_des" << std::endl;
-    std::cout << x_dd_des << std::endl;
     std::cout << "error_pose" << std::endl;
-    std::cout << error << std::endl;
-    std::cout << "A_attract" << std::endl;
-    std::cout << A_attract << std::endl;
-    std::cout << "d_obs2" << std::endl;
-    std::cout << d_obs2 << std::endl;
-  }*/
+    std::cout << error << std::endl;  
+  }
   outcounter++;
 
   
