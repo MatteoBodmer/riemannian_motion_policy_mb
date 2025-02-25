@@ -1,8 +1,8 @@
 # RMP Obstacle Avoidance
 obstacle_avoidance:
-  eta_rep: 100.0
-  mu_rep: 0.03
-  eta_damp: 40.0
+  eta_rep: 100.0  #if moving obstacle, eta_rep = 15.0
+  mu_rep: 0.02    #if moving obstacle, mu_rep = 0.5
+  eta_damp: 50.0
   mu_damp: 0.04
   epsilon: 0.001
   weight_obstacle: 1.0
@@ -12,7 +12,7 @@ attractor:
   alpha_min: 0.001
   sigma_a: 0.005
   sigma_b: 0.008
-  b: 20.0
+  b: 30.0         #if moving obstacle, b = 10.0
   sigma_o: 0.008
   b_axis: 0.1
   weight_attractor: 0.1
@@ -36,7 +36,7 @@ joint_limits:
   metric_velocity_length_scale: 0.01  #v_m
   accel_exploder_length_scale: 0.1 #l_p
   accel_eps: 0.01 #epsilon_p
-  weight_joint_limits: 0.01
+  weight_joint_limits: 0.25
  
 # RMP C-space Target
 c_space_target:

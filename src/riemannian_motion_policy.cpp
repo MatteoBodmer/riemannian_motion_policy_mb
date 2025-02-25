@@ -243,7 +243,7 @@ void RiemannianMotionPolicy::rmp_cspacetarget(){
       f_c_space_target(i) = kp_c_space_target(i,i) * theta_cspace * diff/abs_diff - kd_c_space_target(i,i) * dq_(i);
     }
   }
-    Eigen::MatrixXd f_obs_head = f_obs_tildeEE.block(0, 1, f_obs_tildeEE.rows(), f_obs_tildeEE.cols() - 1);
+    Eigen::MatrixXd f_obs_head = f_obs_tildeEE.block(0, 1, 3, f_obs_tildeEE.cols() - 1);
 
     Eigen::Vector3d x_dd_d_head = x_dd_des.head<3>(); // dimension 3 x 1
     Eigen::VectorXd dotProducts = f_obs_head.transpose() * x_dd_d_head;
