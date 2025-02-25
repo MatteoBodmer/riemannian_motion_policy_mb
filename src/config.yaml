@@ -36,7 +36,7 @@ joint_limits:
   metric_velocity_length_scale: 0.01  #v_m
   accel_exploder_length_scale: 0.1 #l_p
   accel_eps: 0.01 #epsilon_p
-  weight_joint_limits: 0.25
+  weight_joint_limits: 0.25  #can be increased if the robot is moving too fast
  
 # RMP C-space Target
 c_space_target:
