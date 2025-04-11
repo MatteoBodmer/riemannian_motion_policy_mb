@@ -7,12 +7,62 @@ Ensure you have the following installed and configured:
 - **ROS 2 Humble**
 - **libfranka v0.13.0 or newer**
 - **franka_ros2 v0.13.1 or newer**
+- **Moveit (see below)**
 
 For detailed setup instructions, please refer to the [Franka ROS2 FCI documentation](https://support.franka.de/docs/franka_ros2.html).
 
+If MoveIt is not already installed, follow the following instructions:
+### MoveIt
+Install [Moveit Humble](https://moveit.picknik.ai/humble/doc/tutorials/getting_started/getting_started.html).
+Follow the installtion steps there.\
+Here is also a copy of the command. * We name our workspace `franka_ros2_ws`, which is
+different from [Moveit Humble](https://moveit.picknik.ai/humble/doc/tutorials/getting_started/getting_started.html).
+```
+source /opt/ros/humble/setup.bash
+```
+```
+sudo apt install python3-rosdep
+```
+```
+sudo rosdep init
+rosdep update
+sudo apt update
+sudo apt dist-upgrade
+```
+```
+sudo apt install python3-colcon-common-extensions
+sudo apt install python3-colcon-mixin
+colcon mixin add default https://raw.githubusercontent.com/colcon/colcon-mixin-repository/master/index.yaml
+colcon mixin update default
+```
+```
+sudo apt install python3-vcstool
+```
+```
+mkdir -p ~/franka_ros2_ws/src
+```
+```
+cd ~/franka_ros2_ws/src
+git clone --branch humble https://github.com/ros-planning/moveit2_tutorials
+```
+```
+vcs import < moveit2_tutorials/moveit2_tutorials.repos
+```
+```
+sudo apt update && rosdep install -r --from-paths . --ignore-src --rosdistro $ROS_DISTRO -y
+```
+```
+cd ~/franka_ros2_ws
+colcon build --mixin release
+```
+If you are short on computer memory or generally your build is struggling to complete on your computer, 
+you can append the argument `--parallel-workers [num of workers]` to the colcon command above.
+```
+source install/setup.bash
+```
 ---
 
-## Installation
+## Installation RMP
 
 ### Step 1: Clone the RMP Repository
 Clone this repository into the `src` directory of your `franka_ros2_ws` workspace:
@@ -83,7 +133,7 @@ source ~/.bashrc
 ---
 
 ## Additional Setup: Distance Calculator and MoveIt Scene Loader
-Follow the installation instructions provided in the [motion_planning_mt repository](https://github.com/acaviezel/motion_planning_mt).
+Follow the installation instructions provided in the [motion_planning_mt repository](https://github.com/acaviezel/motion_planning).
 
 ---
 
