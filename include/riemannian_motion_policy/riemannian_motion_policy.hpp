@@ -111,6 +111,8 @@ public:
 
  private:
 
+
+    
     //EIGEN_MAKE_ALIGNED_OPERATOR_NEW 
     //Nodes
     rclcpp::Subscription<franka_msgs::msg::FrankaRobotState>::SharedPtr franka_state_subscriber = nullptr;
@@ -139,6 +141,12 @@ public:
     void calculateRTOB();
     void calculate_tau_gravity(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector, const Eigen::Matrix<double, 6, 7>& jacobian);
     
+    Eigen::VectorXd coriolis;
+    std::array<double, 7> coriolis_array;
+    std::array<double, 7> gravity_force_vector_array;
+    std::array<double, 16> pose;
+    std::array<double, 49> mass;
+
     Eigen::Matrix<double, 7, 1> saturateTorqueRate(const Eigen::Matrix<double, 7, 1>& tau_d_calculated, const Eigen::Matrix<double, 7, 1>& tau_J_d);  
     std::array<double, 6> convertToStdArray(const geometry_msgs::msg::WrenchStamped& wrench);
     Eigen::VectorXd calculate_f_obstacle(const Eigen::VectorXd& d_obs, const Eigen::MatrixXd& Jp_obstacle);

@@ -346,10 +346,10 @@ controller_interface::InterfaceConfiguration RiemannianMotionPolicy::state_inter
     state_interfaces_config.names.push_back(robot_name_ + "_joint" + std::to_string(i) + "/velocity");
   }
 
-  for (const auto& franka_robot_model_name : franka_robot_model_->get_state_interface_names()) {
+  /*for (const auto& franka_robot_model_name : franka_robot_model_->get_state_interface_names()) {
     state_interfaces_config.names.push_back(franka_robot_model_name);
     std::cout << franka_robot_model_name << std::endl;
-  }
+  }*/
 
   const std::string full_interface_name = robot_name_ + "/" + state_interface_name_;
 
@@ -413,7 +413,7 @@ CallbackReturn RiemannianMotionPolicy::on_configure(const rclcpp_lifecycle::Stat
     data_ = pinocchio::Data(model_);
     RCLCPP_INFO(get_node()->get_logger(), "Pinocchio model parsed successfully.");
   
-    //end_effector_frame_id_ = model_.getFrameId("fr3_hand");
+    end_effector_frame_id_ = model_.getFrameId("fr3_hand");
 
     
   }
@@ -431,7 +431,7 @@ CallbackReturn RiemannianMotionPolicy::on_configure(const rclcpp_lifecycle::Stat
 
 CallbackReturn RiemannianMotionPolicy::on_activate(
   const rclcpp_lifecycle::State& /*previous_state*/) {
-  franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_); 
+  //franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_); 
   //Load parameters from yaml file
   YAML::Node config = YAML::LoadFile("/home/student/franka_ros2_ws/src/riemannian_motion_policy/src/config.yaml");
 
@@ -497,7 +497,7 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
         10,  // Queue size
         std::bind(&RiemannianMotionPolicy::closestPointCallback, this, std::placeholders::_1)
     );
-  std::array<double, 16> initial_pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
+  /*std::array<double, 16> initial_pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
   Eigen::Affine3d initial_transform(Eigen::Matrix4d::Map(initial_pose.data()));
   position_d_ = initial_transform.translation();
   orientation_d_ = Eigen::Quaterniond(initial_transform.rotation());
@@ -505,6 +505,29 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
   std::array<double, 7> gravity_force_vector_array = franka_robot_model_->getGravityForceVector();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> gravity_force_vector(gravity_force_vector_array.data());
   tau_gravity = gravity_force_vector;
+  return CallbackReturn::SUCCESS;*/
+
+  std::cout << "Available frames in the model:" << std::endl;
+  for (const auto& frame : model_.frames) {
+  std::cout << frame.name << std::endl;
+  }
+  std::cout << "ANumber of available velocities:" << model_.nv << std::endl;
+  //dq_.resize(model_.nv);
+  //q_.resize(model_.nq);   //Dangerous since new values are not initialized
+  updateJointStates();
+  jacobian.resize(6, model_.nv);
+  jacobian_transpose_pinv.resize(model_.nv, 6);
+  jacobian.setZero();
+  jacobian_transpose_pinv.setZero();
+  pinocchio::forwardKinematics(model_, data_, q_);
+  pinocchio::updateFramePlacements(model_, data_);
+  //Eigen::Affine3d initial_transform(data_.oMf[end_effector_frame_id_]);
+  Eigen::Affine3d transform;
+  transform.linear() = data_.oMf[end_effector_frame_id_].rotation();  // Extract rotation
+  transform.translation() = data_.oMf[end_effector_frame_id_].translation();  // Extract translation
+  position_d_ = transform.translation();
+  orientation_d_ = Eigen::Quaterniond(transform.rotation());
+  std::cout << "Completed Activation process" << std::endl;
   return CallbackReturn::SUCCESS;
   
 }
@@ -512,7 +535,7 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
 
 controller_interface::CallbackReturn RiemannianMotionPolicy::on_deactivate(
   const rclcpp_lifecycle::State& /*previous_state*/) {
-  franka_robot_model_->release_interfaces();
+  //franka_robot_model_->release_interfaces();
   return CallbackReturn::SUCCESS;
 }
 
@@ -676,12 +699,24 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   //   std::cin >> mode_;
   // }
   // }
-  std::array<double, 49> mass = franka_robot_model_->getMassMatrix();
-  std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
-  std::array<double, 7> gravity_force_vector_array = franka_robot_model_->getGravityForceVector();
+
+  Eigen::VectorXd dynamic_torques = pinocchio::rnea(model_, data_, q_,  dq_, Eigen::VectorXd::Zero(model_.nv)); // 
+  M = pinocchio::crba(model_, data_, q_); // rigid body algorithm
+  pinocchio::forwardKinematics(model_, data_, q_);
+
+  pinocchio::computeJointJacobians(model_, data_, q_);
+  pinocchio::getFrameJacobian(model_, data_, end_effector_frame_id_, pinocchio::LOCAL_WORLD_ALIGNED, jacobian);
+
+  //std::array<double, 49> mass = franka_robot_model_->getMassMatrix();
+  //std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
+  //std::array<double, 7> gravity_force_vector_array = franka_robot_model_->getGravityForceVector();
+
+  pinocchio::updateFramePlacements(model_, data_);
+  Eigen::MatrixXd g = pinocchio::computeGeneralizedGravity(model_, data_, q_);
+  coriolis = dynamic_torques - g;
   
-  jacobian_array =  franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
-  std::array<double, 16> pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
+  //jacobian_array =  franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
+  //std::array<double, 16> pose = franka_robot_model_->getPoseMatrix(franka::Frame::kEndEffector);
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> gravity_force_vector(gravity_force_vector_array.data());
   jacobian = Eigen::Map<Eigen::Matrix<double, 6, 7>> (jacobian_array.data());
