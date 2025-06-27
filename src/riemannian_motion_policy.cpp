@@ -21,6 +21,12 @@
 #include <chrono>
 #include <yaml-cpp/yaml.h>
 
+#include <pinocchio/parsers/urdf.hpp>
+#include <pinocchio/algorithm/kinematics.hpp>
+#include <pinocchio/algorithm/crba.hpp>
+#include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/jacobian.hpp>
 
 using namespace std::chrono;
 
@@ -360,17 +366,56 @@ CallbackReturn RiemannianMotionPolicy::on_init() {
 
 
 CallbackReturn RiemannianMotionPolicy::on_configure(const rclcpp_lifecycle::State& /*previous_state*/) {
-  franka_robot_model_ = std::make_unique<franka_semantic_components::FrankaRobotModel>(
+  /*franka_robot_model_ = std::make_unique<franka_semantic_components::FrankaRobotModel>(
   franka_semantic_components::FrankaRobotModel(robot_name_ + "/" + k_robot_model_interface_name,
-                                               robot_name_ + "/" + k_robot_state_interface_name));
+                                               robot_name_ + "/" + k_robot_state_interface_name));*/
                                                
-  try {
+  /*try {
     rclcpp::QoS qos_profile(1); // Depth of the message queue
     qos_profile.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
     franka_state_subscriber = get_node()->create_subscription<franka_msgs::msg::FrankaRobotState>(
     "franka_robot_state_broadcaster/robot_state", qos_profile, 
     std::bind(&RiemannianMotionPolicy::topic_callback, this, std::placeholders::_1));
     std::cout << "Succesfully subscribed to robot_state_broadcaster" << std::endl;
+  }
+
+  catch (const std::exception& e) {
+    fprintf(stderr,  "Exception thrown during publisher creation at configure stage with message : %s \n",e.what());
+    return CallbackReturn::ERROR;
+    }*/
+
+
+  try {
+
+    RCLCPP_INFO(get_node()->get_logger(), "Starting on_configure...");
+    // Retrieve the robot_description parameter
+    // This retrieves the robot_description parameter from the ROS 2 parameter server.
+    // If the parameter is not found, an error is logged, and the controller fails to configure.
+    
+    std::string robot_description;
+    auto parameters_client = std::make_shared<rclcpp::AsyncParametersClient>(get_node(), "/robot_state_publisher");
+    parameters_client->wait_for_service();
+    auto future = parameters_client->get_parameters({"robot_description"});
+    auto result = future.get();
+    
+    if (!result.empty()) {
+      robot_description = result[0].value_to_string();
+      RCLCPP_INFO(get_node()->get_logger(), "'robot_description' parameter retrieved successfully.");
+      RCLCPP_INFO(get_node()->get_logger(), "URDF content: %s", robot_description.c_str());       // Print full URDF content
+    } else {
+      RCLCPP_ERROR(get_node()->get_logger(), "Failed to get robot_description parameter.");
+      return CallbackReturn::ERROR;
+    }
+    // Parse the URDF using Pinocchio
+    //The robot_description parameter contains the URDF as a string.
+    //The buildModelFromXML function parses the URDF and initializes the Pinocchio model.
+    //pinocchio::urdf::buildModelFromXML(robot_description, model_);
+    //data_ = pinocchio::Data(model_);
+    RCLCPP_INFO(get_node()->get_logger(), "Pinocchio model parsed successfully.");
+  
+    //end_effector_frame_id_ = model_.getFrameId("fr3_hand");
+
+    
   }
 
   catch (const std::exception& e) {

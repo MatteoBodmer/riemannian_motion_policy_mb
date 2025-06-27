@@ -32,7 +32,7 @@ find_package(moveit_visual_tools REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(shape_msgs REQUIRED)
-
+find_package(pinocchio REQUIRED)
 
 
 add_library(
@@ -74,7 +74,7 @@ pluginlib_export_plugin_description_file(
 
 add_executable(user_input_client src/user_input_client.cpp)
 target_link_libraries(user_input_client ${PROJECT_NAME})
-
+target_link_libraries(riemannian_motion_policy pinocchio::pinocchio)
 
 
 

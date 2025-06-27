@@ -1,91 +1,166 @@
+# Copyright (c) 2024 Franka Robotics GmbH
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
+import xacro
+
+from ament_index_python.packages import get_package_share_directory
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess, RegisterEventHandler
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+from launch import LaunchContext, LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import  LaunchConfiguration
+from launch_ros.actions import Node
+
+def get_robot_description(context: LaunchContext, arm_id, load_gripper, franka_hand):
+    arm_id_str = context.perform_substitution(arm_id)
+    load_gripper_str = context.perform_substitution(load_gripper)
+    franka_hand_str = context.perform_substitution(franka_hand)
+
+    franka_xacro_file = os.path.join(
+        get_package_share_directory('franka_description'),
+        'robots',
+        arm_id_str,
+        arm_id_str + '.urdf.xacro'
+    )
+
+    robot_description_config = xacro.process_file(
+        franka_xacro_file, 
+        mappings={
+            'arm_id': arm_id_str, 
+            'hand': load_gripper_str, 
+            'ros2_control': 'true', 
+            'gazebo': 'true',
+            'ee_id': franka_hand_str,
+            'gazebo_effort': 'true'
+        }
+    )
+    robot_description = {'robot_description': robot_description_config.toxml()}
+
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='both',
+        parameters=[
+            robot_description,
+        ]
+    )
+
+    return [robot_state_publisher]
+
+
+
 def generate_launch_description():
-    robot_ip_parameter_name = 'robot_ip'
-    arm_id_parameter_name = 'arm_id'
-    load_gripper_parameter_name = 'load_gripper'
-    use_fake_hardware_parameter_name = 'use_fake_hardware'
-    fake_sensor_commands_parameter_name = 'fake_sensor_commands'
-    use_rviz_parameter_name = 'use_rviz'
+    # Configure ROS nodes for launch
+    load_gripper_name = 'load_gripper'
+    franka_hand_name = 'franka_hand'
+    arm_id_name = 'arm_id'
 
-    robot_ip = LaunchConfiguration(robot_ip_parameter_name)
-    arm_id = LaunchConfiguration(arm_id_parameter_name)
-    load_gripper = LaunchConfiguration(load_gripper_parameter_name)
-    use_fake_hardware = LaunchConfiguration(use_fake_hardware_parameter_name)
-    fake_sensor_commands = LaunchConfiguration(fake_sensor_commands_parameter_name)
-    use_rviz = LaunchConfiguration(use_rviz_parameter_name)
+    load_gripper = LaunchConfiguration(load_gripper_name)
+    franka_hand = LaunchConfiguration(franka_hand_name)
+    arm_id = LaunchConfiguration(arm_id_name)
 
-    # Execute the set_load.sh script
-    set_load = ExecuteProcess(
-        cmd=['/home/andri/franka_ros2_ws/src/riemannian_motion_policy/launch/set_load.sh'],
+    load_gripper_launch_argument = DeclareLaunchArgument(
+            load_gripper_name,
+            default_value='true',
+            description='true/false for activating the gripper')
+    franka_hand_launch_argument = DeclareLaunchArgument(
+            franka_hand_name,
+            default_value='franka_hand',
+            description='Default value: franka_hand')
+    arm_id_launch_argument = DeclareLaunchArgument(
+            arm_id_name,
+            default_value='fr3',
+            description='Available values: fr3, fp3 and fer')
+
+    # Get robot description
+    robot_state_publisher = OpaqueFunction(
+        function=get_robot_description,
+        args=[arm_id, load_gripper, franka_hand])
+
+    # Gazebo Sim
+    os.environ['GZ_SIM_RESOURCE_PATH'] = os.path.dirname(get_package_share_directory('franka_description'))
+    pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
+    gazebo_empty_world = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
+        launch_arguments={'gz_args': 'empty.sdf -r', }.items(),
+    )
+
+    # Spawn
+    spawn = Node(
+        package='ros_gz_sim',
+        executable='create',
+        arguments=['-topic', '/robot_description'],
         output='screen',
     )
 
-    # Start the riemannian_motion_policyafter set_load.sh finishes
-    start_controller = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['riemannian_motion_policy'],
-        output='screen',
+    # Visualize in RViz
+    rviz_file = os.path.join(get_package_share_directory('franka_description'), 'rviz',
+                             'visualize_franka.rviz')
+    rviz = Node(package='rviz2',
+             executable='rviz2',
+             name='rviz2',
+             arguments=['--display-config', rviz_file, '-f', 'world'],
+    )
+    
+    load_joint_state_broadcaster = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
+                'joint_state_broadcaster'],
+        output='screen'
+    )
+    
+    riemannian_motion_policy = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
+                'riemannian_motion_policy'],
+        output='screen'
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument(
-            robot_ip_parameter_name,
-            default_value='192.168.1.200',
-            description='Hostname or IP address of the robot.'),
-        DeclareLaunchArgument(
-            arm_id_parameter_name,
-            default_value='fr3',
-            description='ID of the type of arm used. Supported values: fer, fr3, fp3'),
-        DeclareLaunchArgument(
-            use_rviz_parameter_name,
-            default_value='true',
-            description='Visualize the robot in Rviz'),
-        DeclareLaunchArgument(
-            use_fake_hardware_parameter_name,
-            default_value='false',
-            description='Use fake hardware'),
-        DeclareLaunchArgument(
-            fake_sensor_commands_parameter_name,
-            default_value='false',
-            description="Fake sensor commands. Only valid when '{}' is true".format(
-                use_fake_hardware_parameter_name)),
-        DeclareLaunchArgument(
-            load_gripper_parameter_name,
-            default_value='true',
-            description='Use Franka Gripper as an end-effector, otherwise, the robot is loaded '
-                        'without an end-effector.'),
-
-        # Include the main Franka bringup launch file
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([PathJoinSubstitution(
-                [FindPackageShare('franka_bringup'), 'launch', 'franka.launch.py'])]),
-            launch_arguments={robot_ip_parameter_name: robot_ip,
-                              arm_id_parameter_name: arm_id,
-                              load_gripper_parameter_name: load_gripper,
-                              use_fake_hardware_parameter_name: use_fake_hardware,
-                              fake_sensor_commands_parameter_name: fake_sensor_commands,
-                              use_rviz_parameter_name: use_rviz
-                              }.items(),
-        ),
-
-        
-        
-        # First, run set_load.sh
-        set_load,
-
-        # Then, start the controller only after set_load.sh completes
+        load_gripper_launch_argument,
+        franka_hand_launch_argument,
+        arm_id_launch_argument,
+        gazebo_empty_world,
+        robot_state_publisher,
+        rviz,
+        spawn,
+        RegisterEventHandler(
+                event_handler=OnProcessExit(
+                    target_action=spawn,
+                    on_exit=[load_joint_state_broadcaster],
+                )
+        ),    
         RegisterEventHandler(
             event_handler=OnProcessExit(
-                target_action=set_load,
-                on_exit=[start_controller],
+                target_action=load_joint_state_broadcaster,
+                on_exit=[riemannian_motion_policy],
             )
+        ),
+        Node(
+            package='joint_state_publisher',
+            executable='joint_state_publisher',
+            name='joint_state_publisher',
+            parameters=[
+                {'source_list': ['joint_states'],
+                 'rate': 30}],
         ),
     ])

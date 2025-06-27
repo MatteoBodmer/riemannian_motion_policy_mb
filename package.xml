@@ -17,6 +17,7 @@
   <depend>franka_msgs</depend>
   <depend>franka_semantic_components</depend>
   <depend>messages_fr3</depend>
+  <depend>pinocchio</depend>
   <depend>moveit_visual_tools</depend>
   <build_depend>moveit_ros_planning_interface</build_depend>
   <exec_depend>moveit_ros_planning_interface</exec_depend>

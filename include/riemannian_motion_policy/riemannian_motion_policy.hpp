@@ -14,9 +14,8 @@
 
 
 
-
-
 #pragma once
+
 
 #include <array>
 #include <cassert>
@@ -46,6 +45,7 @@
 
 #include "franka_hardware/franka_hardware_interface.hpp"
 #include <franka_hardware/model.hpp>
+
 #include "visualization_msgs/msg/marker.hpp"
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit_msgs/msg/collision_object.hpp>
@@ -55,10 +55,24 @@
 #include "franka_msgs/msg/errors.hpp"
 #include "franka_msgs/srv/set_load.hpp"
 #include "messages_fr3/srv/set_pose.hpp"
+
 #include "franka_semantic_components/franka_robot_model.hpp"
 #include "franka_semantic_components/franka_robot_state.hpp"
+
 #include "messages_fr3/msg/closest_point.hpp"
 #include "geometry_msgs/msg/pose.hpp"
+
+//#define BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
+//#define BOOST_MPL_LIMIT_LIST_SIZE 30
+//#define BOOST_MPL_LIMIT_VECTOR_SIZE 30
+
+#include <pinocchio/parsers/urdf.hpp>
+#include <pinocchio/algorithm/kinematics.hpp>
+#include <pinocchio/algorithm/crba.hpp>
+#include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/jacobian.hpp>
+
 #define IDENTITY Eigen::MatrixXd::Identity(6, 6)
 
 using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
@@ -89,9 +103,11 @@ public:
 
   void setPose(const std::shared_ptr<messages_fr3::srv::SetPose::Request> request, 
     std::shared_ptr<messages_fr3::srv::SetPose::Response> response);
-      
+  
 
  private:
+
+    //EIGEN_MAKE_ALIGNED_OPERATOR_NEW 
     //Nodes
     rclcpp::Subscription<franka_msgs::msg::FrankaRobotState>::SharedPtr franka_state_subscriber = nullptr;
     rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr desired_pose_sub;
@@ -126,7 +142,6 @@ public:
                                       const Eigen::VectorXd& f_obs, double r_a, const Eigen::MatrixXd& Jp_obstacle);
     Eigen::MatrixXd calculate_target_attraction(const Eigen::VectorXd& error, const Eigen::MatrixXd& jacobian);
     std::pair<Eigen::VectorXd, Eigen::MatrixXd> calculate_global_damping(const Eigen::MatrixXd& Jp_obstacle);
-   
     //State vectors and matrices
     Eigen::Matrix<double, 7, 7> M;
     std::array<double, 7> q_subscribed;
@@ -246,6 +261,7 @@ public:
     std::vector<double> jacobian_array4;
     std::vector<double> jacobian_array5;
     std::vector<double> jacobian_array6;
+    
     std::vector<double> jacobian_array7;
     std::vector<double> jacobian_arrayhand;
     std::vector<double> jacobian_arrayEE;
@@ -374,14 +390,18 @@ public:
     const std::string robot_name_{"fr3"};
     const std::string k_robot_state_interface_name{"robot_state"};
     const std::string k_robot_model_interface_name{"robot_model"};
-    franka_hardware::FrankaHardwareInterface interfaceClass;
+    //franka_hardware::FrankaHardwareInterface interfaceClass;
     std::unique_ptr<franka_semantic_components::FrankaRobotModel> franka_robot_model_;
     const double delta_tau_max_{1.0};
     const double dt = 0.001;
-                
+     
+    pinocchio::Model model_;
+    pinocchio::Data data_;
+    int end_effector_frame_id_;
+
     //Impedance control variables              
     Eigen::Matrix<double, 6, 6> Lambda = IDENTITY;                                           // operational space mass matrix
-    Eigen::Matrix<double, 6, 6> Sm = IDENTITY;                                               // task space selection matrix for positions and rotation
+    Eigen::Matrix<double, 6, 6> Sm = IDENTITY;                                               //model_ task space selection matrix for positions and rotation
     Eigen::Matrix<double, 6, 6> Sf = Eigen::MatrixXd::Zero(6, 6);                            // task space selection matrix for forces
     Eigen::Matrix<double, 6, 6> K =  (Eigen::MatrixXd(6,6) << 250,   0,   0,   0,   0,   0,
                                                                 0, 250,   0,   0,   0,   0,
