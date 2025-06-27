@@ -409,8 +409,8 @@ CallbackReturn RiemannianMotionPolicy::on_configure(const rclcpp_lifecycle::Stat
     // Parse the URDF using Pinocchio
     //The robot_description parameter contains the URDF as a string.
     //The buildModelFromXML function parses the URDF and initializes the Pinocchio model.
-    //pinocchio::urdf::buildModelFromXML(robot_description, model_);
-    //data_ = pinocchio::Data(model_);
+    pinocchio::urdf::buildModelFromXML(robot_description, model_);
+    data_ = pinocchio::Data(model_);
     RCLCPP_INFO(get_node()->get_logger(), "Pinocchio model parsed successfully.");
   
     //end_effector_frame_id_ = model_.getFrameId("fr3_hand");

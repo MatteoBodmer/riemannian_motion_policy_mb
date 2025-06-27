@@ -32,6 +32,7 @@ find_package(moveit_visual_tools REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(shape_msgs REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(pinocchio REQUIRED)
 
 
@@ -76,6 +77,11 @@ add_executable(user_input_client src/user_input_client.cpp)
 target_link_libraries(user_input_client ${PROJECT_NAME})
 target_link_libraries(riemannian_motion_policy pinocchio::pinocchio)
 
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+  BOOST_MPL_LIMIT_LIST_SIZE=30
+  BOOST_MPL_LIMIT_VECTOR_SIZE=30
+  BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
+)
 
 
 install(TARGETS
@@ -98,7 +104,6 @@ install(
   DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
-
 
 if(BUILD_TESTING)
     find_package(ament_cmake_clang_format REQUIRED)

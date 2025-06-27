@@ -73,6 +73,10 @@
 #include <pinocchio/algorithm/jacobian.hpp>
 #include <pinocchio/algorithm/frames.hpp>
 
+#define BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
+#define BOOST_MPL_LIMIT_LIST_SIZE 30
+#define BOOST_MPL_LIMIT_VECTOR_SIZE 30
+
 #define IDENTITY Eigen::MatrixXd::Identity(6, 6)
 
 using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
