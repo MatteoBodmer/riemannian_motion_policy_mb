@@ -433,7 +433,7 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
   const rclcpp_lifecycle::State& /*previous_state*/) {
   //franka_robot_model_->assign_loaned_state_interfaces(state_interfaces_); 
   //Load parameters from yaml file
-  YAML::Node config = YAML::LoadFile("/home/student/franka_ros2_ws/src/riemannian_motion_policy/src/config.yaml");
+  YAML::Node config = YAML::LoadFile("/home/matteo/franka_ros2_ws/src/Riemannian-Motion-Policies-Franka-Emika-Robot/src/config.yaml");
 
   // Load obstacle avoidance parameters
   eta_rep = config["obstacle_avoidance"]["eta_rep"].as<double>();
@@ -511,7 +511,7 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
   for (const auto& frame : model_.frames) {
   std::cout << frame.name << std::endl;
   }
-  std::cout << "ANumber of available velocities:" << model_.nv << std::endl;
+  std::cout << "ANumber of available Activation:" << model_.nv << std::endl;
   //dq_.resize(model_.nv);
   //q_.resize(model_.nq);   //Dangerous since new values are not initialized
   updateJointStates();
