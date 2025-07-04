@@ -59,7 +59,7 @@ def get_robot_description(context: LaunchContext, arm_id, load_gripper, franka_h
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
-        output='both',
+        output='screen',
         parameters=[
             robot_description,
         ]
@@ -135,6 +135,20 @@ def generate_launch_description():
         output='screen'
     )
 
+        # Execute the set_load.sh script
+    set_load = ExecuteProcess(
+        cmd=['/home/matteo/franka_ros2_ws/src/Riemannian-Motion-Policies-Franka-Emika-Robot/launch'],
+        output='screen',
+    )
+
+    # Start the riemannian_motion_policyafter set_load.sh finishes
+    start_controller = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['riemannian_motion_policy'],
+        output='screen',
+    )
+
     return LaunchDescription([
         load_gripper_launch_argument,
         franka_hand_launch_argument,
@@ -162,5 +176,16 @@ def generate_launch_description():
             parameters=[
                 {'source_list': ['joint_states'],
                  'rate': 30}],
+        ),
+
+        # First, run set_load.sh
+        set_load,
+
+        # Then, start the controller only after set_load.sh completes
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=set_load,
+                on_exit=[start_controller],
+            )
         ),
     ])
