@@ -40,7 +40,7 @@ joint_limits:
  
 # RMP C-space Target
 c_space_target:
-  kp_c_space_target: [2, 2,2, 2, 2,2, 1] #k_p
-  kd_c_space_target: [7, 7, 7, 7, 7, 7, 10] #k_d
+  kp_c_space_target: [4.5, 4.5,4.5, 4.5, 4.5,4.5, 2.3] #k_p
+  kd_c_space_target: [6, 6, 6, 6, 6, 6, 9] #k_d
   theta: 0.5 #theta
   weight_c_space_target: 0.25

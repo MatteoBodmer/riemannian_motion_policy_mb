@@ -27,12 +27,12 @@ int main(int argc, char **argv) {
         std:: cin >> task_selection;
         switch (task_selection){
             case 1:{ 
-                std::cout << "Enter new goal position: \n [1] --> 0.5, -0.4, 0.5 \n [2] --> DO NOT USE \n [3] --> 0.5, 0.4, 0.5\n";
+                std::cout << "Enter new goal position: \n [1] --> 0.8, -0.4, 0.5 \n [2] --> DO NOT USE \n [3] --> 0.5, 0.4, 0.5\n";
                 std::cin >> pose_selection;
                 switch (pose_selection){
                     case 1:{
-                        pose_request->x = 0.5;
-                        pose_request->y = -0.4;
+                        pose_request->x = 0.6;
+                        pose_request->y = 0.0;
                         pose_request->z = 0.5;
                         pose_request->roll = M_PI;
                         pose_request->pitch = 0.0;
