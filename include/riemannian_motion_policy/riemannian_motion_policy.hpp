@@ -16,6 +16,8 @@
 
 #pragma once
 
+// Simulation
+#include <std_srvs/srv/trigger.hpp>
 
 #include <array>
 #include <cassert>
@@ -120,7 +122,8 @@ public:
     rclcpp::Service<messages_fr3::srv::SetPose>::SharedPtr pose_srv_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_publisher_;
     rclcpp::Subscription<messages_fr3::msg::ClosestPoint>::SharedPtr closest_point_sub_;
-
+    //Simulation
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_service_;
 
 
     //Functions
@@ -140,7 +143,9 @@ public:
     void calculate_residual_torque(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector);
     void calculateRTOB();
     void calculate_tau_gravity(const Eigen::Map<Eigen::Matrix<double, 7, 1>>& coriolis, const Eigen::Map<Eigen::Matrix<double, 7, 1>>& gravity_force_vector, const Eigen::Matrix<double, 6, 7>& jacobian);
-    
+    //Simulation
+    void reset_to_home_callback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+
     Eigen::VectorXd coriolis;
     std::array<double, 7> coriolis_array;
     std::array<double, 7> gravity_force_vector_array;

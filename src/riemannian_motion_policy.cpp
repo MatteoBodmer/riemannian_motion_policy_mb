@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//Simulation
+#include <std_srvs/srv/trigger.hpp>
+
 #include <riemannian_motion_policy/riemannian_motion_policy.hpp>
 #include <cassert>
 #include <cmath>
@@ -292,6 +295,12 @@ void RiemannianMotionPolicy::rmp_cspacetarget(){
 
     Eigen::Vector3d x_dd_d_head = x_dd_des.head<3>(); // dimension 3 x 1
     Eigen::VectorXd dotProducts = f_obs_head.transpose() * x_dd_d_head;
+
+      // Additional safety check for empty dotProducts
+    if (dotProducts.size() == 0) {
+    A_c_space_target = weight_c_space_target * Eigen::MatrixXd::Identity(7,7);
+    return;
+    }
 
     // Find the index of the maximum dot product.
     int maxIndex;
@@ -635,6 +644,17 @@ CallbackReturn RiemannianMotionPolicy::on_activate(
   orientation_d_ = Eigen::Quaterniond(transform.rotation());
   std::cout << "Frame placement (translation): " << data_.oMf[end_effector_frame_id_].translation().transpose() << std::endl;
   std::cout << "Completed Activation process" << std::endl;
+
+  //Simulation from
+  reset_service_ = get_node()->create_service<std_srvs::srv::Trigger>(
+    "/riemannian_motion_policy/reset_to_home",
+    std::bind(&RiemannianMotionPolicy::reset_to_home_callback, this, 
+              std::placeholders::_1, std::placeholders::_2)
+  );
+  
+  RCLCPP_INFO(get_node()->get_logger(), "Reset service created");  
+  //Simulation to
+
   return CallbackReturn::SUCCESS;
   
 }
@@ -997,15 +1017,15 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   }
 
   // Add logging logic here
-  if (outcounter % 1000 / update_frequency == 0) { // Log periodically
-    std::cout << "=== Debugging Information ===" << std::endl;
-    std::cout << "ddq_: " << ddq_.transpose() << std::endl;
-    std::cout << "error_pose: " << error.transpose() << std::endl;
-    std::cout << "tau_d: " << tau_d.transpose() << std::endl;
-    std::cout << "gravity_torques: " << gravity_force_vector.transpose() << std::endl;
-    std::cout << "coriolis: " << coriolis.transpose() << std::endl;
-    std::cout << "=============================" << std::endl;
-  }
+  // if (outcounter % 1000 / update_frequency == 0) { // Log periodically
+  //   std::cout << "=== Debugging Information ===" << std::endl;
+  //   std::cout << "ddq_: " << ddq_.transpose() << std::endl;
+  //   std::cout << "error_pose: " << error.transpose() << std::endl;
+  //   std::cout << "tau_d: " << tau_d.transpose() << std::endl;
+  //   std::cout << "gravity_torques: " << gravity_force_vector.transpose() << std::endl;
+  //   std::cout << "coriolis: " << coriolis.transpose() << std::endl;
+  //   std::cout << "=============================" << std::endl;
+  // }
 
   outcounter++;
 
@@ -1015,7 +1035,30 @@ controller_interface::return_type RiemannianMotionPolicy::update(const rclcpp::T
   update_stiffness_and_references();
   return controller_interface::return_type::OK;
 }
+
+//Simulation from
+void RiemannianMotionPolicy::reset_to_home_callback(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+    // Set home position - adjust these coordinates to your robot's safe home position
+    position_d_target_ << 0.3, 0.0, 0.6;  // x, y, z in meters
+    
+    // Set home orientation (upright)
+    orientation_d_target_.coeffs() << 0.0, 0.0, 0.0, 1.0;  // x, y, z, w quaternion
+    
+    response->success = true;
+    response->message = "Robot reset to home position";
+    
+    RCLCPP_INFO(get_node()->get_logger(), "Robot reset to home position via service");
 }
+//Simulation to
+
+
+}
+
+
+
 
 // namespace riemannian_motion_policy
 #include "pluginlib/class_list_macros.hpp"

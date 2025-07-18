@@ -17,10 +17,15 @@
   <depend>franka_msgs</depend>
   <depend>franka_semantic_components</depend>
   <depend>messages_fr3</depend>
+  <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>shape_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>moveit_ros_move_group</depend>
   <depend>pinocchio</depend>
   <depend>moveit_visual_tools</depend>
-  <build_depend>moveit_ros_planning_interface</build_depend>
-  <exec_depend>moveit_ros_planning_interface</exec_depend>
 
 
   <exec_depend>franka_description</exec_depend>
